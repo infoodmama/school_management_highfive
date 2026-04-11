@@ -15,7 +15,8 @@ const Fees = () => {
   const [classes, setClasses] = useState([]);
   const [rollNo, setRollNo] = useState('');
   const [studentData, setStudentData] = useState(null);
-  const [selectedFee, setSelectedFee] = useState(null); // { type: 'term'|'custom', number?, id?, amount, label }
+  const [selectedFee, setSelectedFee] = useState(null); // { type: 'term'|'custom', number?, id?, amount, label, totalAmount }
+  const [customPayAmount, setCustomPayAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
   const [upiScreenshot, setUpiScreenshot] = useState(null);
   const [daySheetDate, setDaySheetDate] = useState(new Date().toISOString().split('T')[0]);
@@ -59,12 +60,14 @@ const Fees = () => {
   const handlePayment = async () => {
     if (!selectedFee) return;
     if (paymentMode === 'upi' && !upiScreenshot) { toast.error('Please upload UPI screenshot'); return; }
+    const payAmount = parseFloat(customPayAmount) || selectedFee.amount;
+    if (payAmount <= 0) { toast.error('Enter valid amount'); return; }
     try {
       const payload = {
         studentId: studentData.student.id,
         rollNo: studentData.student.rollNo,
         studentName: studentData.student.studentName,
-        amount: selectedFee.amount,
+        amount: payAmount,
         paymentMode,
         upiScreenshot: paymentMode === 'upi' ? upiScreenshot : null,
       };
@@ -73,7 +76,7 @@ const Fees = () => {
 
       await api.createFeePayment(payload);
       toast.success('Payment recorded. Receipt sent via WhatsApp');
-      setUpiScreenshot(null); setPaymentMode('cash'); setSelectedFee(null);
+      setUpiScreenshot(null); setPaymentMode('cash'); setSelectedFee(null); setCustomPayAmount('');
       handleSearchStudent();
     } catch (error) { toast.error('Failed to record payment'); }
   };
@@ -93,17 +96,19 @@ const Fees = () => {
     } catch (error) { toast.error('Failed to export'); }
   };
 
+  const getTermPaid = (n) => studentData?.paidTerms?.[`term${n}`] || 0;
+
   const isTermPaid = (termNumber) => {
     if (!studentData) return false;
     const expected = studentData.student[`feeTerm${termNumber}`];
-    const paid = studentData.paidTerms?.[`term${termNumber}`] || 0;
-    return paid >= expected;
+    return getTermPaid(termNumber) >= expected;
   };
+
+  const getCustomPaid = (feeId) => studentData?.paidCustomFees?.[feeId] || 0;
 
   const isCustomFeePaid = (feeId, amount) => {
     if (!studentData) return false;
-    const paid = studentData.paidCustomFees?.[feeId] || 0;
-    return paid >= amount;
+    return getCustomPaid(feeId) >= amount;
   };
 
   // Fee Types CRUD
@@ -178,14 +183,19 @@ const Fees = () => {
                 {[1, 2, 3].map((termNum) => {
                   const termAmount = studentData.student[`feeTerm${termNum}`];
                   const paid = isTermPaid(termNum);
+                  const paidAmt = getTermPaid(termNum);
+                  const pendingAmt = termAmount - paidAmt;
                   return (
-                    <div key={termNum} data-testid={`term-${termNum}-card`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-100'}`}>
-                      <div className="flex items-center justify-between mb-4">
+                    <div key={termNum} data-testid={`term-${termNum}-card`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : paidAmt > 0 ? 'border-amber-300 bg-amber-50/20' : 'border-slate-100'}`}>
+                      <div className="flex items-center justify-between mb-2">
                         <h3 className="text-lg font-bold text-slate-900">Term {termNum}</h3>
-                        {paid && <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>}
+                        {paid ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>
+                          : paidAmt > 0 ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-white">PARTIAL</span> : null}
                       </div>
-                      <p className="text-3xl font-extrabold text-slate-900 mb-4">{'\u20B9'}{termAmount?.toLocaleString()}</p>
-                      {!paid && <Button data-testid={`pay-term-${termNum}-btn`} onClick={() => setSelectedFee({ type: 'term', number: termNum, amount: termAmount, label: `Term ${termNum}` })} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Pay Now</Button>}
+                      <p className="text-2xl font-extrabold text-slate-900">{'\u20B9'}{termAmount?.toLocaleString()}</p>
+                      {paidAmt > 0 && <p className="text-sm font-bold text-emerald-600 mt-1">Paid: {'\u20B9'}{paidAmt.toLocaleString()}</p>}
+                      {!paid && pendingAmt > 0 && <p className="text-sm font-bold text-rose-600">Pending: {'\u20B9'}{pendingAmt.toLocaleString()}</p>}
+                      {!paid && <Button data-testid={`pay-term-${termNum}-btn`} onClick={() => { setSelectedFee({ type: 'term', number: termNum, amount: pendingAmt, totalAmount: termAmount, label: `Term ${termNum}` }); setCustomPayAmount(String(pendingAmt)); }} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform mt-3">Pay Now</Button>}
                     </div>
                   );
                 })}
@@ -198,16 +208,20 @@ const Fees = () => {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {studentData.customFees.map((cf) => {
                       const paid = isCustomFeePaid(cf.id, cf.amount);
+                      const paidAmt = getCustomPaid(cf.id);
+                      const pendingAmt = cf.amount - paidAmt;
                       return (
-                        <div key={cf.id} data-testid={`custom-fee-${cf.id}`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-100'}`}>
+                        <div key={cf.id} data-testid={`custom-fee-${cf.id}`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : paidAmt > 0 ? 'border-amber-300 bg-amber-50/20' : 'border-slate-100'}`}>
                           <div className="flex items-center justify-between mb-2">
                             <h3 className="text-lg font-bold text-slate-900">{cf.feeName}</h3>
-                            {paid && <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>}
+                            {paid ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>
+                              : paidAmt > 0 ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-white">PARTIAL</span> : null}
                           </div>
-                          {cf.dueDate && <p className="text-sm text-rose-600 font-medium mb-2">Due: {cf.dueDate}</p>}
-                          {cf.noticeStartDate && <p className="text-xs text-slate-500 mb-2">Notice from: {cf.noticeStartDate}</p>}
-                          <p className="text-3xl font-extrabold text-slate-900 mb-4">{'\u20B9'}{cf.amount?.toLocaleString()}</p>
-                          {!paid && <Button onClick={() => setSelectedFee({ type: 'custom', id: cf.id, amount: cf.amount, label: cf.feeName })} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Pay Now</Button>}
+                          {cf.dueDate && <p className="text-sm text-rose-600 font-medium mb-1">Due: {cf.dueDate}</p>}
+                          <p className="text-2xl font-extrabold text-slate-900">{'\u20B9'}{cf.amount?.toLocaleString()}</p>
+                          {paidAmt > 0 && <p className="text-sm font-bold text-emerald-600 mt-1">Paid: {'\u20B9'}{paidAmt.toLocaleString()}</p>}
+                          {!paid && pendingAmt > 0 && <p className="text-sm font-bold text-rose-600">Pending: {'\u20B9'}{pendingAmt.toLocaleString()}</p>}
+                          {!paid && <Button onClick={() => { setSelectedFee({ type: 'custom', id: cf.id, amount: pendingAmt, totalAmount: cf.amount, label: cf.feeName }); setCustomPayAmount(String(pendingAmt)); }} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform mt-3">Pay Now</Button>}
                         </div>
                       );
                     })}
@@ -218,8 +232,17 @@ const Fees = () => {
               {/* Payment section */}
               {selectedFee && (
                 <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-sky-200 p-6">
-                  <h2 className="text-xl font-bold text-slate-800 mb-4">Payment for: {selectedFee.label} - {'\u20B9'}{selectedFee.amount?.toLocaleString()}</h2>
+                  <h2 className="text-xl font-bold text-slate-800 mb-4">Payment for: {selectedFee.label}</h2>
                   <div className="space-y-4">
+                    <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-4">
+                      <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Total Fee</p><p className="text-lg font-extrabold text-slate-900">{'\u20B9'}{selectedFee.totalAmount?.toLocaleString()}</p></div>
+                      <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Pending Amount</p><p className="text-lg font-extrabold text-rose-600">{'\u20B9'}{selectedFee.amount?.toLocaleString()}</p></div>
+                    </div>
+                    <div>
+                      <Label className="text-base font-bold">Payment Amount *</Label>
+                      <Input data-testid="custom-pay-amount" type="number" value={customPayAmount} onChange={(e) => setCustomPayAmount(e.target.value)} className="rounded-xl h-12 mt-2 text-lg font-bold" placeholder="Enter amount to pay" min="1" max={selectedFee.amount} />
+                      <p className="text-xs text-slate-500 mt-1">You can pay partial or full amount. Pending: {'\u20B9'}{selectedFee.amount?.toLocaleString()}</p>
+                    </div>
                     <div>
                       <Label>Payment Mode *</Label>
                       <RadioGroup value={paymentMode} onValueChange={setPaymentMode} className="flex gap-4 mt-2">
@@ -235,8 +258,8 @@ const Fees = () => {
                       </div>
                     )}
                     <div className="flex justify-end gap-3">
-                      <Button variant="outline" onClick={() => setSelectedFee(null)} className="rounded-xl">Cancel</Button>
-                      <Button data-testid="confirm-payment-btn" onClick={handlePayment} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Confirm Payment</Button>
+                      <Button variant="outline" onClick={() => { setSelectedFee(null); setCustomPayAmount(''); }} className="rounded-xl">Cancel</Button>
+                      <Button data-testid="confirm-payment-btn" onClick={handlePayment} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Confirm Payment ({'\u20B9'}{(parseFloat(customPayAmount) || 0).toLocaleString()})</Button>
                     </div>
                   </div>
                 </div>
@@ -249,7 +272,9 @@ const Fees = () => {
         <TabsContent value="feetypes" className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-slate-800">Custom Fee Types</h2>
-            <Dialog open={showFeeTypeDialog} onOpenChange={(open) => { setShowFeeTypeDialog(open); if (!open) resetFeeTypeForm(); }}>
+            <div className="flex gap-3">
+              <Button data-testid="send-reminders-btn" onClick={async () => { try { const r = await api.sendFeeReminders(); toast.success(r.data.message); } catch (e) { toast.error('Failed to send reminders'); } }} variant="outline" className="font-bold rounded-xl bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200">Send Due Reminders</Button>
+              <Dialog open={showFeeTypeDialog} onOpenChange={(open) => { setShowFeeTypeDialog(open); if (!open) resetFeeTypeForm(); }}>
               <DialogTrigger asChild>
                 <Button data-testid="add-fee-type-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Add Fee Type</Button>
               </DialogTrigger>
@@ -285,6 +310,7 @@ const Fees = () => {
                 </form>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {feeTypes.length === 0 ? (

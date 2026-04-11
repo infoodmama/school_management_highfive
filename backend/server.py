@@ -179,6 +179,57 @@ class PromoteRequest(BaseModel):
     fromClass: str
     toClass: str
 
+class InventoryItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    itemName: str
+    quantity: int
+    category: str
+    purchaseDate: str
+    amount: float
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class InventoryItemCreate(BaseModel):
+    itemName: str
+    quantity: int
+    category: str
+    purchaseDate: str
+    amount: float
+
+class Event(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    description: str
+    date: str
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class EventCreate(BaseModel):
+    title: str
+    description: str
+    date: str
+
+class Homework(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    studentClass: str
+    section: str
+    subject: str
+    title: str
+    description: str
+    dueDate: str
+    assignedBy: str
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class HomeworkCreate(BaseModel):
+    studentClass: str
+    section: str
+    subject: str
+    title: str
+    description: str
+    dueDate: str
+    assignedBy: str
+
 # ==================== CLASS & SECTION ROUTES ====================
 
 @api_router.post("/classes", response_model=ClassSection)
@@ -807,6 +858,184 @@ async def get_dashboard_stats():
         "totalFeesCollected": total_fees,
         "pendingFees": pending_fees
     }
+
+# ==================== INVENTORY ROUTES ====================
+
+@api_router.post("/inventory")
+async def create_inventory_item(item: InventoryItemCreate):
+    obj = InventoryItem(**item.model_dump())
+    doc = obj.model_dump()
+    doc['createdAt'] = doc['createdAt'].isoformat()
+    await db.inventory.insert_one(doc)
+    return obj
+
+@api_router.get("/inventory")
+async def get_inventory(category: Optional[str] = None):
+    query = {}
+    if category:
+        query['category'] = category
+    items = await db.inventory.find(query, {"_id": 0}).to_list(1000)
+    return items
+
+@api_router.put("/inventory/{item_id}")
+async def update_inventory_item(item_id: str, data: InventoryItemCreate):
+    result = await db.inventory.update_one({"id": item_id}, {"$set": data.model_dump()})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
+    updated = await db.inventory.find_one({"id": item_id}, {"_id": 0})
+    return updated
+
+@api_router.delete("/inventory/{item_id}")
+async def delete_inventory_item(item_id: str):
+    result = await db.inventory.delete_one({"id": item_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return {"message": "Item deleted"}
+
+# ==================== EVENT ROUTES ====================
+
+@api_router.post("/events")
+async def create_event(event: EventCreate):
+    obj = Event(**event.model_dump())
+    doc = obj.model_dump()
+    doc['createdAt'] = doc['createdAt'].isoformat()
+    await db.events.insert_one(doc)
+    return obj
+
+@api_router.get("/events")
+async def get_events(month: Optional[str] = None):
+    query = {}
+    if month:
+        query['date'] = {'$regex': f'^{month}'}
+    events = await db.events.find(query, {"_id": 0}).to_list(1000)
+    return events
+
+@api_router.delete("/events/{event_id}")
+async def delete_event(event_id: str):
+    result = await db.events.delete_one({"id": event_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Event not found")
+    return {"message": "Event deleted"}
+
+# ==================== HOMEWORK ROUTES ====================
+
+@api_router.post("/homework")
+async def create_homework(hw: HomeworkCreate):
+    obj = Homework(**hw.model_dump())
+    doc = obj.model_dump()
+    doc['createdAt'] = doc['createdAt'].isoformat()
+    await db.homework.insert_one(doc)
+    return obj
+
+@api_router.get("/homework")
+async def get_homework(studentClass: Optional[str] = None, section: Optional[str] = None):
+    query = {}
+    if studentClass:
+        query['studentClass'] = studentClass
+    if section:
+        query['section'] = section
+    items = await db.homework.find(query, {"_id": 0}).to_list(1000)
+    return items
+
+@api_router.delete("/homework/{hw_id}")
+async def delete_homework(hw_id: str):
+    result = await db.homework.delete_one({"id": hw_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Homework not found")
+    return {"message": "Homework deleted"}
+
+# ==================== STUDENT DETAIL ====================
+
+@api_router.get("/students/{student_id}/detail")
+async def get_student_detail(student_id: str):
+    student = await db.students.find_one({"id": student_id}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    # Attendance history
+    attendance = await db.attendance.find({"studentId": student_id}, {"_id": 0}).to_list(10000)
+    total_days = len(attendance)
+    present_days = sum(1 for a in attendance if a['status'] == 'present')
+    absent_days = sum(1 for a in attendance if a['status'] == 'absent')
+
+    # Fee payments
+    payments = await db.fee_payments.find({"studentId": student_id}, {"_id": 0}).to_list(100)
+
+    # Custom fees applicable
+    custom_fees = await db.fee_types.find({
+        "$or": [
+            {"applicableClass": student.get('studentClass', ''), "applicableSection": student.get('section', '')},
+            {"applicableClass": student.get('studentClass', ''), "applicableSection": {"$in": [None, ""]}},
+            {"applicableClass": {"$in": [None, ""]}, "applicableSection": {"$in": [None, ""]}},
+        ]
+    }, {"_id": 0}).to_list(500)
+
+    paid_terms = {}
+    paid_custom = {}
+    for p in payments:
+        if p.get('termNumber'):
+            k = f"term{p['termNumber']}"
+            paid_terms[k] = paid_terms.get(k, 0) + p['amount']
+        if p.get('feeTypeId'):
+            paid_custom[p['feeTypeId']] = paid_custom.get(p['feeTypeId'], 0) + p['amount']
+
+    return {
+        "student": student,
+        "attendance": attendance,
+        "attendanceStats": {
+            "totalDays": total_days,
+            "presentDays": present_days,
+            "absentDays": absent_days,
+            "percentage": round(present_days / total_days * 100, 1) if total_days > 0 else 0,
+        },
+        "payments": payments,
+        "paidTerms": paid_terms,
+        "paidCustomFees": paid_custom,
+        "customFees": custom_fees,
+    }
+
+# ==================== FEE REMINDERS ====================
+
+@api_router.post("/fees/send-reminders")
+async def send_fee_reminders():
+    """Send WhatsApp reminders for fees with approaching/past due dates"""
+    settings_doc = await db.settings.find_one({"type": "whatsapp"}, {"_id": 0})
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    # Find fee types with due dates approaching (within 7 days) or past
+    fee_types = await db.fee_types.find({"dueDate": {"$ne": None, "$lte": today}}, {"_id": 0}).to_list(500)
+    if not fee_types:
+        # Also check upcoming within 7 days
+        from datetime import timedelta
+        upcoming = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+        fee_types = await db.fee_types.find({
+            "dueDate": {"$ne": None, "$gte": today, "$lte": upcoming}
+        }, {"_id": 0}).to_list(500)
+
+    sent_count = 0
+    for ft in fee_types:
+        query = {}
+        if ft.get('applicableClass') and ft['applicableClass']:
+            query['studentClass'] = ft['applicableClass']
+        if ft.get('applicableSection') and ft['applicableSection']:
+            query['section'] = ft['applicableSection']
+
+        students = await db.students.find(query, {"_id": 0}).to_list(10000)
+        for student in students:
+            # Check if already paid
+            paid = await db.fee_payments.find_one({
+                "studentId": student['id'],
+                "feeTypeId": ft['id']
+            }, {"_id": 0})
+            if paid:
+                continue
+
+            message = f"Fee Reminder: {ft['feeName']} of Rs.{ft['amount']} is due on {ft['dueDate']} for {student['studentName']} (Roll: {student['rollNo']}). Please pay at the earliest."
+            result = await send_whatsapp_message(student.get('mobile', ''), message, settings_doc)
+            if result.get('success'):
+                sent_count += 1
+
+    return {"message": f"Reminders sent to {sent_count} parents", "feeTypesChecked": len(fee_types)}
 
 # Include the router in the main app
 app.include_router(api_router)

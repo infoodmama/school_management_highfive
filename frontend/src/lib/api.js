@@ -60,4 +60,26 @@ export const api = {
 
   // Dashboard
   getDashboardStats: () => axios.get(`${API}/stats/dashboard`),
+
+  // Student Detail
+  getStudentDetail: (id) => axios.get(`${API}/students/${id}/detail`),
+
+  // Inventory
+  getInventory: (params) => axios.get(`${API}/inventory`, { params }),
+  createInventory: (data) => axios.post(`${API}/inventory`, data),
+  updateInventory: (id, data) => axios.put(`${API}/inventory/${id}`, data),
+  deleteInventory: (id) => axios.delete(`${API}/inventory/${id}`),
+
+  // Events
+  getEvents: (params) => axios.get(`${API}/events`, { params }),
+  createEvent: (data) => axios.post(`${API}/events`, data),
+  deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
+
+  // Homework
+  getHomework: (params) => axios.get(`${API}/homework`, { params }),
+  createHomework: (data) => axios.post(`${API}/homework`, data),
+  deleteHomework: (id) => axios.delete(`${API}/homework/${id}`),
+
+  // Fee Reminders
+  sendFeeReminders: () => axios.post(`${API}/fees/send-reminders`),
 };

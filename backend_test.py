@@ -255,6 +255,175 @@ class SchoolManagementAPITester:
         
         return True
 
+    def test_inventory_crud(self):
+        """Test Inventory CRUD operations"""
+        print("\n📦 Testing Inventory Management...")
+        
+        # Get initial inventory
+        self.run_test("Get Inventory (Initial)", "GET", "inventory", 200)
+        
+        # Create a new inventory item
+        inventory_data = {
+            "itemName": "Test Whiteboard",
+            "quantity": 5,
+            "category": "Stationery",
+            "purchaseDate": "2024-01-15",
+            "amount": 1500.0
+        }
+        success, created_item = self.run_test("Create Inventory Item", "POST", "inventory", 200, inventory_data)
+        
+        if success and created_item:
+            item_id = created_item.get('id')
+            
+            # Get inventory after creation
+            self.run_test("Get Inventory (After Create)", "GET", "inventory", 200)
+            
+            # Update the inventory item
+            update_data = {
+                "itemName": "Updated Whiteboard",
+                "quantity": 10,
+                "category": "Stationery",
+                "purchaseDate": "2024-01-15",
+                "amount": 1600.0
+            }
+            self.run_test("Update Inventory Item", "PUT", f"inventory/{item_id}", 200, update_data)
+            
+            # Delete the inventory item
+            self.run_test("Delete Inventory Item", "DELETE", f"inventory/{item_id}", 200)
+        
+        return success
+
+    def test_events_crud(self):
+        """Test Events CRUD operations"""
+        print("\n📅 Testing Events Management...")
+        
+        # Get initial events
+        self.run_test("Get Events (Initial)", "GET", "events", 200)
+        
+        # Create a new event
+        event_data = {
+            "title": "Test School Event",
+            "description": "This is a test event for the school",
+            "date": "2024-02-15"
+        }
+        success, created_event = self.run_test("Create Event", "POST", "events", 200, event_data)
+        
+        if success and created_event:
+            event_id = created_event.get('id')
+            
+            # Get events after creation
+            self.run_test("Get Events (After Create)", "GET", "events", 200)
+            
+            # Get events with month filter
+            self.run_test("Get Events (Filtered)", "GET", "events", 200, params={"month": "2024-02"})
+            
+            # Delete the event
+            self.run_test("Delete Event", "DELETE", f"events/{event_id}", 200)
+        
+        return success
+
+    def test_homework_crud(self):
+        """Test Homework CRUD operations"""
+        print("\n📚 Testing Homework Management...")
+        
+        # First create a class for homework
+        class_data = {
+            "className": "TestClass3",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Homework", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        # Get initial homework
+        self.run_test("Get Homework (Initial)", "GET", "homework", 200)
+        
+        # Create a new homework
+        homework_data = {
+            "studentClass": "TestClass3",
+            "section": "A",
+            "subject": "Mathematics",
+            "title": "Test Homework Assignment",
+            "description": "Complete exercises 1-10 from chapter 5",
+            "dueDate": "2024-02-20",
+            "assignedBy": "Test Teacher"
+        }
+        success, created_homework = self.run_test("Create Homework", "POST", "homework", 200, homework_data)
+        
+        if success and created_homework:
+            homework_id = created_homework.get('id')
+            
+            # Get homework after creation
+            self.run_test("Get Homework (After Create)", "GET", "homework", 200)
+            
+            # Get homework with filters
+            self.run_test("Get Homework (Filtered)", "GET", "homework", 200, params={"studentClass": "TestClass3"})
+            
+            # Delete the homework
+            self.run_test("Delete Homework", "DELETE", f"homework/{homework_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Test Class for Homework", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
+    def test_student_detail(self):
+        """Test Student Detail endpoint"""
+        print("\n👤 Testing Student Detail...")
+        
+        # First create a class and student
+        class_data = {
+            "className": "TestClass4",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Student Detail", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        student_data = {
+            "studentName": "Test Student Detail",
+            "rollNo": "DETAIL001",
+            "studentClass": "TestClass4",
+            "section": "A",
+            "fatherName": "Test Father",
+            "motherName": "Test Mother",
+            "mobile": "9876543210",
+            "address": "Test Address",
+            "feeTerm1": 5000.0,
+            "feeTerm2": 5000.0,
+            "feeTerm3": 5000.0
+        }
+        success, created_student = self.run_test("Create Student for Detail", "POST", "students", 200, student_data)
+        
+        if success and created_student:
+            student_id = created_student.get('id')
+            
+            # Test student detail endpoint
+            self.run_test("Get Student Detail", "GET", f"students/{student_id}/detail", 200)
+            
+            # Clean up - delete the student
+            self.run_test("Delete Student Detail Test", "DELETE", f"students/{student_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Test Class for Student Detail", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
+    def test_fee_reminders(self):
+        """Test Fee Reminders endpoint"""
+        print("\n📢 Testing Fee Reminders...")
+        
+        # Test fee reminders endpoint
+        success, response = self.run_test("Send Fee Reminders", "POST", "fees/send-reminders", 200)
+        
+        return success
+
     def run_all_tests(self):
         """Run all API tests"""
         print("🚀 Starting School Management System API Tests...")
@@ -268,6 +437,13 @@ class SchoolManagementAPITester:
         self.test_attendance_operations()
         self.test_fees_operations()
         self.test_settings_operations()
+        
+        # Test new modules added in this iteration
+        self.test_inventory_crud()
+        self.test_events_crud()
+        self.test_homework_crud()
+        self.test_student_detail()
+        self.test_fee_reminders()
         
         # Print summary
         print(f"\n📊 Test Summary:")

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { GraduationCap, Users, ClipboardCheck, DollarSign, ShoppingCart, Settings, BookOpen } from 'lucide-react';
+import { GraduationCap, Users, ClipboardCheck, DollarSign, ShoppingCart, Settings, BookOpen, Package, CalendarDays, BookOpenCheck } from 'lucide-react';
 
 const Layout = () => {
   const location = useLocation();
@@ -12,6 +12,9 @@ const Layout = () => {
     { path: '/attendance', label: 'Attendance', icon: ClipboardCheck },
     { path: '/fees', label: 'Fees', icon: DollarSign },
     { path: '/expenses', label: 'Expenses', icon: ShoppingCart },
+    { path: '/inventory', label: 'Inventory', icon: Package },
+    { path: '/calendar', label: 'Calendar', icon: CalendarDays },
+    { path: '/homework', label: 'Homework', icon: BookOpenCheck },
     { path: '/settings', label: 'Settings', icon: Settings },
   ];
 
