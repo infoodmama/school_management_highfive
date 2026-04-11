@@ -1,37 +1,28 @@
 # SchoolPro - School Management System PRD
 
-## Original Problem Statement
-School management system with modules: Student Management, Attendance Management, Fee Management, Inventory Management, Event Calendar, Homework. With updates for: Classes & Sections management, Custom fee types with due dates, Database connection settings, Partial payment, Student detail view, Fee reminders.
-
 ## Architecture
-- **Backend**: FastAPI + MongoDB (Motor async driver)
-- **Frontend**: React 19 + Tailwind CSS + Shadcn/UI
-- **Database**: MongoDB (configurable via Settings page)
-- **WhatsApp**: Custom API integration (crm.abhiit.com)
+- Backend: FastAPI + MongoDB (Motor async) | Frontend: React 19 + Tailwind + Shadcn/UI
+- WhatsApp: Custom API (crm.abhiit.com) | PDF: ReportLab
 
-## What's Been Implemented (April 11, 2026)
-- [x] Dashboard with stats
-- [x] Classes & Sections CRUD with dropdown integration
-- [x] Student Management (add single/bulk CSV, edit, delete, promote, filters)
-- [x] Student Detail view with attendance history + fee status (paid/pending)
-- [x] Attendance Management (take/view with dropdowns, bulk mark, WhatsApp alerts, export)
-- [x] Fee Management (term fees + custom fees, partial payment with custom amount)
-- [x] Fee Types CRUD (custom fees with class/section, notice/due dates)
+## Implemented Features (April 11, 2026)
+- [x] Dashboard, Classes & Sections CRUD
+- [x] Student CRUD (single/bulk CSV, promote, parent login credentials)
+- [x] Student Detail View (attendance + fees + inventory issued)
+- [x] Attendance (take/view, bulk mark, WhatsApp alerts, CSV/Excel export)
+- [x] Fee Management (term + custom fees, partial payment, custom amount with max validation)
+- [x] Transaction History with UPI screenshots and Invoice PDF download
+- [x] Fee Types (custom fees with class/section, notice/due dates)
 - [x] Automated Fee Reminders via WhatsApp
-- [x] Expense Management (with mandatory bill upload)
-- [x] Inventory Management (item name, qty, category, purchase date, amount)
-- [x] Event Calendar (monthly view with events)
-- [x] Homework Management (class, section, subject, title, desc, due date, assigned by)
-- [x] WhatsApp API Settings
-- [x] Database Connection Settings
-- [x] Student form focus bug FIX
+- [x] Expense Management (mandatory bill upload)
+- [x] Inventory (inward + outward/issue to students, stock deduction)
+- [x] Event Calendar (monthly grid, CRUD)
+- [x] Homework (assign with class/section/subject, CRUD, overdue detection)
+- [x] Staff Management (teachers + office staff with login credentials)
+- [x] Parent Portal (/parent - login with credentials, view attendance/fees/events/homework)
+- [x] Settings (WhatsApp API, Database connection)
 
-## P1 (Next)
-- Edit homework/events
-- Attendance report generation (PDF)
-- Parent login portal
-
-## P2 (Future)
-- Report card generation
+## Next Tasks
+- Report card generation (PDF)
 - Multi-school support
 - SMS fallback notifications
+- Salary/payroll for staff
