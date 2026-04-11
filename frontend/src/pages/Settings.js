@@ -12,7 +12,7 @@ const Settings = () => {
   const [savingWhatsApp, setSavingWhatsApp] = useState(false);
   const [savingDb, setSavingDb] = useState(false);
   const [dbStatus, setDbStatus] = useState(null); // null | 'success' | 'error'
-  const [whatsAppSettings, setWhatsAppSettings] = useState({ apiUrl: '', accessToken: '' });
+  const [whatsAppSettings, setWhatsAppSettings] = useState({ phoneNumberId: '', accessToken: '' });
   const [dbSettings, setDbSettings] = useState({ mongoUrl: '', dbName: '' });
 
   useEffect(() => {
@@ -104,20 +104,20 @@ const Settings = () => {
 
             <form onSubmit={handleSaveWhatsApp} className="space-y-6">
               <div>
-                <Label className="text-base font-bold">API URL *</Label>
-                <Input data-testid="whatsapp-api-url-input" required value={whatsAppSettings.apiUrl} onChange={(e) => setWhatsAppSettings({ ...whatsAppSettings, apiUrl: e.target.value })} className="rounded-xl h-12 mt-2" placeholder="https://crm.abhiit.com/api/meta/v19.0/..." />
-                <p className="text-xs text-slate-500 mt-2">Enter your WhatsApp Business API endpoint URL</p>
+                <Label className="text-base font-bold">Phone Number ID *</Label>
+                <Input data-testid="whatsapp-phone-id-input" required value={whatsAppSettings.phoneNumberId} onChange={(e) => setWhatsAppSettings({ ...whatsAppSettings, phoneNumberId: e.target.value })} className="rounded-xl h-12 mt-2" placeholder="e.g., 488774804320252" />
+                <p className="text-xs text-slate-500 mt-2">Your WhatsApp Business phone number ID</p>
               </div>
               <div>
                 <Label className="text-base font-bold">Access Token *</Label>
                 <Input data-testid="whatsapp-access-token-input" required type="password" value={whatsAppSettings.accessToken} onChange={(e) => setWhatsAppSettings({ ...whatsAppSettings, accessToken: e.target.value })} className="rounded-xl h-12 mt-2" placeholder="Enter your access token" />
               </div>
               <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-                <h3 className="font-bold text-sky-900 mb-2">How it works:</h3>
+                <h3 className="font-bold text-sky-900 mb-2">Template Messages Configured:</h3>
                 <ul className="text-sm text-sky-800 space-y-1 list-disc list-inside">
-                  <li>Attendance alerts sent automatically for absent students</li>
-                  <li>Fee payment receipts sent when payment is confirmed</li>
-                  <li>Messages sent to student's registered mobile number</li>
+                  <li><b>fee_paid_bill</b> - Sends invoice PDF with amount, fee name, student name</li>
+                  <li><b>absent_hifg</b> - Sends student name, class, date when marked absent</li>
+                  <li><b>holi</b> - Sends event name & date (when notification enabled)</li>
                 </ul>
               </div>
               <div className="flex justify-end pt-4">

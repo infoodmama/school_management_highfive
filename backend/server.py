@@ -178,7 +178,7 @@ class ExpenseCreate(BaseModel):
     billUrl: str
 
 class WhatsAppSettings(BaseModel):
-    apiUrl: str
+    phoneNumberId: str
     accessToken: str
 
 class PromoteRequest(BaseModel):
@@ -226,12 +226,14 @@ class Event(BaseModel):
     title: str
     description: str
     date: str
+    sendNotification: Optional[bool] = False
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class EventCreate(BaseModel):
     title: str
     description: str
     date: str
+    sendNotification: Optional[bool] = False
 
 class Homework(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -289,15 +291,87 @@ class LoginRequest(BaseModel):
 
 # ==================== WHATSAPP SERVICE ====================
 
-async def send_whatsapp_message(mobile, message, settings=None):
+BASE_WA_URL = "https://crm.abhiit.com/api/meta/v19.0"
+
+async def get_wa_settings():
+    settings = await db.settings.find_one({"type": "whatsapp"}, {"_id": 0})
+    if not settings or not settings.get('phoneNumberId') or not settings.get('accessToken'):
+        return None
+    return settings
+
+async def send_wa_template(mobile, template_name, components, settings=None):
+    """Send WhatsApp template message"""
     try:
-        if not settings or not settings.get('apiUrl') or not settings.get('accessToken'):
+        if not settings:
+            settings = await get_wa_settings()
+        if not settings:
             return {"success": False, "message": "WhatsApp not configured"}
+        url = f"{BASE_WA_URL}/{settings['phoneNumberId']}/messages"
+        headers = {"Authorization": f"Bearer {settings['accessToken']}", "Content-Type": "application/json"}
+        payload = {
+            "to": mobile,
+            "recipient_type": "individual",
+            "type": "template",
+            "template": {
+                "language": {"policy": "deterministic", "code": "en"},
+                "name": template_name,
+                "components": components
+            }
+        }
+        async with httpx.AsyncClient() as http_client:
+            response = await http_client.post(url, headers=headers, json=payload, timeout=30.0)
+            logger.info(f"WhatsApp template '{template_name}' sent to {mobile}: {response.status_code}")
+            return {"success": True, "data": response.json()}
+    except Exception as e:
+        logger.error(f"WhatsApp send failed: {str(e)}")
+        return {"success": False, "message": str(e)}
+
+async def send_fee_paid_message(mobile, invoice_url, amount, fee_name, student_name, settings=None):
+    """Send fee paid success with invoice document"""
+    components = [
+        {"type": "header", "parameters": [{"type": "document", "document": {"link": invoice_url}}]},
+        {"type": "body", "parameters": [
+            {"type": "text", "text": str(amount)},
+            {"type": "text", "text": fee_name},
+            {"type": "text", "text": student_name}
+        ]}
+    ]
+    return await send_wa_template(mobile, "fee_paid_bill", components, settings)
+
+async def send_absent_message(mobile, student_name, class_name, date_str, settings=None):
+    """Send absent notification"""
+    components = [
+        {"type": "body", "parameters": [
+            {"type": "text", "text": student_name},
+            {"type": "text", "text": class_name},
+            {"type": "text", "text": date_str}
+        ]}
+    ]
+    return await send_wa_template(mobile, "absent_hifg", components, settings)
+
+async def send_event_message(mobile, event_name, event_date, settings=None):
+    """Send event notification"""
+    components = [
+        {"type": "body", "parameters": [
+            {"type": "text", "text": event_name},
+            {"type": "text", "text": event_date}
+        ]}
+    ]
+    return await send_wa_template(mobile, "holi", components, settings)
+
+# Backward-compat wrapper
+async def send_whatsapp_message(mobile, message, settings=None):
+    """Fallback text message (kept for fee reminders etc)"""
+    try:
+        if not settings:
+            settings = await get_wa_settings()
+        if not settings:
+            return {"success": False, "message": "WhatsApp not configured"}
+        url = f"{BASE_WA_URL}/{settings['phoneNumberId']}/messages"
         headers = {"Authorization": f"Bearer {settings['accessToken']}", "Content-Type": "application/json"}
         payload = {"to": mobile, "recipient_type": "individual", "type": "text", "text": {"body": message}}
         async with httpx.AsyncClient() as http_client:
-            response = await http_client.post(settings['apiUrl'], headers=headers, json=payload, timeout=30.0)
-            response.raise_for_status()
+            response = await http_client.post(url, headers=headers, json=payload, timeout=30.0)
             return {"success": True, "data": response.json()}
     except Exception as e:
         logger.error(f"WhatsApp send failed: {str(e)}")
@@ -617,13 +691,102 @@ async def export_attendance(studentClass: str, section: str, startDate: str, end
 @api_router.post("/attendance/send-alerts")
 async def send_attendance_alerts(data: Dict):
     absent_records = data.get('absentRecords', [])
-    settings_doc = await db.settings.find_one({"type": "whatsapp"}, {"_id": 0})
+    settings_doc = await get_wa_settings()
     sent_count = 0
     for record in absent_records:
-        message = f"Dear Parent, {record['studentName']} (Roll: {record['rollNo']}) was absent on {record['date']} in Class {record['studentClass']}-{record['section']}."
-        result = await send_whatsapp_message(record.get('mobile', ''), message, settings_doc)
+        class_name = f"{record.get('studentClass', '')}-{record.get('section', '')}"
+        result = await send_absent_message(record.get('mobile', ''), record['studentName'], class_name, record['date'], settings_doc)
         if result.get('success'): sent_count += 1
     return {"message": f"Alerts sent to {sent_count} parents"}
+
+@api_router.get("/fees/status")
+async def get_fee_status(studentClass: str, section: str):
+    """Get fee status for all students in a class/section"""
+    students = await db.students.find({"studentClass": studentClass, "section": section}, {"_id": 0}).to_list(1000)
+    # Get all custom fee types applicable
+    custom_fees = await db.fee_types.find({
+        "$or": [
+            {"applicableClass": studentClass, "applicableSection": section},
+            {"applicableClass": studentClass, "applicableSection": {"$in": [None, ""]}},
+            {"applicableClass": {"$in": [None, ""]}, "applicableSection": {"$in": [None, ""]}},
+        ]
+    }, {"_id": 0}).to_list(500)
+
+    result = []
+    for student in students:
+        payments = await db.fee_payments.find({"studentId": student['id']}, {"_id": 0}).to_list(100)
+        paid_terms = {}
+        paid_custom = {}
+        for p in payments:
+            if p.get('termNumber'):
+                k = f"term{p['termNumber']}"
+                paid_terms[k] = paid_terms.get(k, 0) + p['amount']
+            if p.get('feeTypeId'):
+                paid_custom[p['feeTypeId']] = paid_custom.get(p['feeTypeId'], 0) + p['amount']
+
+        total_expected = student.get('feeTerm1', 0) + student.get('feeTerm2', 0) + student.get('feeTerm3', 0)
+        total_expected += sum(cf['amount'] for cf in custom_fees)
+        total_paid = sum(paid_terms.values()) + sum(paid_custom.values())
+
+        row = {
+            "rollNo": student['rollNo'],
+            "studentName": student['studentName'],
+            "mobile": student.get('mobile', ''),
+            "term1Total": student.get('feeTerm1', 0),
+            "term1Paid": paid_terms.get('term1', 0),
+            "term2Total": student.get('feeTerm2', 0),
+            "term2Paid": paid_terms.get('term2', 0),
+            "term3Total": student.get('feeTerm3', 0),
+            "term3Paid": paid_terms.get('term3', 0),
+            "customFees": [{
+                "feeName": cf['feeName'],
+                "total": cf['amount'],
+                "paid": paid_custom.get(cf['id'], 0)
+            } for cf in custom_fees],
+            "totalExpected": total_expected,
+            "totalPaid": total_paid,
+            "totalPending": total_expected - total_paid,
+        }
+        result.append(row)
+    return {"students": result, "customFeeNames": [cf['feeName'] for cf in custom_fees]}
+
+@api_router.get("/fees/status/export")
+async def export_fee_status(studentClass: str, section: str, format: str = 'csv'):
+    data = await get_fee_status(studentClass, section)
+    students = data['students']
+    custom_names = data['customFeeNames']
+
+    headers = ['Roll No', 'Name', 'Term1 Total', 'Term1 Paid', 'Term2 Total', 'Term2 Paid', 'Term3 Total', 'Term3 Paid']
+    for cn in custom_names:
+        headers.extend([f'{cn} Total', f'{cn} Paid'])
+    headers.extend(['Total Expected', 'Total Paid', 'Total Pending'])
+
+    rows = []
+    for s in students:
+        row = [s['rollNo'], s['studentName'], s['term1Total'], s['term1Paid'], s['term2Total'], s['term2Paid'], s['term3Total'], s['term3Paid']]
+        for cf in s['customFees']:
+            row.extend([cf['total'], cf['paid']])
+        row.extend([s['totalExpected'], s['totalPaid'], s['totalPending']])
+        rows.append(row)
+
+    if format == 'xlsx':
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Fee Status"
+        ws.append(headers)
+        for r in rows: ws.append(r)
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                 headers={"Content-Disposition": f"attachment; filename=fee_status_{studentClass}_{section}.xlsx"})
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    for r in rows: writer.writerow(r)
+    output.seek(0)
+    return Response(content=output.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename=fee_status_{studentClass}_{section}.csv"})
 
 # ==================== FEE ROUTES ====================
 
@@ -655,12 +818,13 @@ async def create_fee_payment(payment: FeePaymentCreate):
     doc = payment_obj.model_dump()
     doc['paymentDate'] = doc['paymentDate'].isoformat()
     await db.fee_payments.insert_one(doc)
-    settings_doc = await db.settings.find_one({"type": "whatsapp"}, {"_id": 0})
+    settings_doc = await get_wa_settings()
     student = await db.students.find_one({"rollNo": payment.rollNo}, {"_id": 0})
-    if student:
-        fee_label = f"Term: {payment.termNumber}" if payment.termNumber else f"Fee: {payment.feeName or 'Custom'}"
-        message = f"Payment Receipt\nStudent: {payment.studentName}\nAmount: Rs.{payment.amount}\n{fee_label}\nMode: {payment.paymentMode}\nReceipt: {receipt_number}\nDate: {datetime.now().strftime('%Y-%m-%d')}"
-        await send_whatsapp_message(student.get('mobile', ''), message, settings_doc)
+    if student and settings_doc:
+        fee_label = f"Term {payment.termNumber}" if payment.termNumber else (payment.feeName or 'Custom Fee')
+        # Build invoice URL for WhatsApp document
+        invoice_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://localhost')}/api/fees/invoice/{payment_obj.id}"
+        await send_fee_paid_message(student.get('mobile', ''), invoice_url, payment.amount, fee_label, payment.studentName, settings_doc)
     return payment_obj
 
 @api_router.get("/fees/invoice/{payment_id}")
@@ -712,7 +876,7 @@ async def export_fees(startDate: str, endDate: str, format: str = 'csv'):
 
 @api_router.post("/fees/send-reminders")
 async def send_fee_reminders():
-    settings_doc = await db.settings.find_one({"type": "whatsapp"}, {"_id": 0})
+    settings_doc = await get_wa_settings()
     today = datetime.now().strftime('%Y-%m-%d')
     upcoming = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
     fee_types = await db.fee_types.find({"dueDate": {"$ne": None, "$lte": upcoming}}, {"_id": 0}).to_list(500)
@@ -754,12 +918,12 @@ async def get_expenses(startDate: Optional[str] = None, endDate: Optional[str] =
 @api_router.get("/settings/whatsapp")
 async def get_whatsapp_settings():
     settings = await db.settings.find_one({"type": "whatsapp"}, {"_id": 0})
-    if not settings: return {"apiUrl": "", "accessToken": ""}
+    if not settings: return {"phoneNumberId": "", "accessToken": ""}
     return settings
 
 @api_router.put("/settings/whatsapp")
 async def update_whatsapp_settings(settings: WhatsAppSettings):
-    await db.settings.update_one({"type": "whatsapp"}, {"$set": {"apiUrl": settings.apiUrl, "accessToken": settings.accessToken}}, upsert=True)
+    await db.settings.update_one({"type": "whatsapp"}, {"$set": {"phoneNumberId": settings.phoneNumberId, "accessToken": settings.accessToken}}, upsert=True)
     return {"message": "Settings updated"}
 
 # ==================== FILE UPLOAD ====================
@@ -828,6 +992,14 @@ async def create_event(event: EventCreate):
     doc = obj.model_dump()
     doc['createdAt'] = doc['createdAt'].isoformat()
     await db.events.insert_one(doc)
+    # Send WhatsApp notification to all students if enabled
+    if event.sendNotification:
+        settings_doc = await get_wa_settings()
+        if settings_doc:
+            students = await db.students.find({}, {"_id": 0, "mobile": 1}).to_list(10000)
+            for student in students:
+                if student.get('mobile'):
+                    await send_event_message(student['mobile'], event.title, event.date, settings_doc)
     return obj
 
 @api_router.get("/events")

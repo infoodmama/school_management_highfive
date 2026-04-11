@@ -246,12 +246,12 @@ class SchoolManagementAPITester:
         # Get Database settings
         self.run_test("Get Database Settings", "GET", "settings/database", 200)
         
-        # Test updating WhatsApp settings
+        # Test updating WhatsApp settings with new phoneNumberId field
         whatsapp_data = {
-            "apiUrl": "https://test-api.example.com",
+            "phoneNumberId": "488774804320252",
             "accessToken": "test-token"
         }
-        self.run_test("Update WhatsApp Settings", "PUT", "settings/whatsapp", 200, whatsapp_data)
+        self.run_test("Update WhatsApp Settings (phoneNumberId)", "PUT", "settings/whatsapp", 200, whatsapp_data)
         
         return True
 
@@ -670,6 +670,96 @@ class SchoolManagementAPITester:
         
         return success
 
+    def test_fee_status_endpoints(self):
+        """Test Fee Status endpoints"""
+        print("\n📊 Testing Fee Status Management...")
+        
+        # First create a class and student for testing fee status
+        class_data = {
+            "className": "TestClassFeeStatus",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Fee Status", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        student_data = {
+            "studentName": "Test Student Fee Status",
+            "rollNo": "FEESTATUS001",
+            "studentClass": "TestClassFeeStatus",
+            "section": "A",
+            "fatherName": "Test Father",
+            "motherName": "Test Mother",
+            "mobile": "9876543210",
+            "address": "Test Address",
+            "feeTerm1": 5000.0,
+            "feeTerm2": 5000.0,
+            "feeTerm3": 5000.0
+        }
+        success, created_student = self.run_test("Create Student for Fee Status", "POST", "students", 200, student_data)
+        
+        if success and created_student:
+            # Test fee status endpoint
+            params = {
+                "studentClass": "TestClassFeeStatus",
+                "section": "A"
+            }
+            success, response = self.run_test("Get Fee Status", "GET", "fees/status", 200, params=params)
+            
+            if success:
+                print(f"   Fee status data contains {len(response.get('students', []))} students")
+                print(f"   Custom fee names: {response.get('customFeeNames', [])}")
+            
+            # Test fee status export endpoint
+            export_params = {
+                "studentClass": "TestClassFeeStatus",
+                "section": "A",
+                "format": "csv"
+            }
+            self.run_test("Export Fee Status (CSV)", "GET", "fees/status/export", 200, params=export_params)
+            
+            # Test fee status export endpoint (Excel)
+            export_params_xlsx = {
+                "studentClass": "TestClassFeeStatus",
+                "section": "A",
+                "format": "xlsx"
+            }
+            self.run_test("Export Fee Status (Excel)", "GET", "fees/status/export", 200, params=export_params_xlsx)
+            
+            # Clean up - delete the student
+            student_id = created_student.get('id')
+            self.run_test("Delete Student for Fee Status", "DELETE", f"students/{student_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Class for Fee Status", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
+    def test_event_with_notification(self):
+        """Test Event creation with WhatsApp notification"""
+        print("\n📅 Testing Event with WhatsApp Notification...")
+        
+        # Create an event with sendNotification enabled
+        event_data = {
+            "title": "Test Event with Notification",
+            "description": "This event will send WhatsApp notifications",
+            "date": "2024-02-15",
+            "sendNotification": True
+        }
+        success, created_event = self.run_test("Create Event with Notification", "POST", "events", 200, event_data)
+        
+        if success and created_event:
+            event_id = created_event.get('id')
+            print(f"   Event created with notification enabled: {created_event.get('sendNotification')}")
+            
+            # Clean up - delete the event
+            self.run_test("Delete Event with Notification", "DELETE", f"events/{event_id}", 200)
+        
+        return success
+
     def test_homework_update(self):
         """Test Homework Update endpoint"""
         print("\n📚 Testing Homework Update...")
@@ -750,6 +840,10 @@ class SchoolManagementAPITester:
         self.test_invoice_endpoint()
         self.test_event_update()
         self.test_homework_update()
+        
+        # Test NEW features added in current iteration
+        self.test_fee_status_endpoints()
+        self.test_event_with_notification()
         
         # Print summary
         print(f"\n📊 Test Summary:")

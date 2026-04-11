@@ -30,6 +30,11 @@ const Fees = () => {
   const [editingFeeType, setEditingFeeType] = useState(null);
   const [feeTypeForm, setFeeTypeForm] = useState({ feeName: '', amount: '', applicableClass: '', applicableSection: '', noticeStartDate: '', dueDate: '' });
 
+  // Fee Status state
+  const [feeStatusClass, setFeeStatusClass] = useState('');
+  const [feeStatusSection, setFeeStatusSection] = useState('');
+  const [feeStatusData, setFeeStatusData] = useState(null);
+
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
   }, []);
@@ -154,6 +159,7 @@ const Fees = () => {
           <TabsTrigger data-testid="payment-tab" value="payment" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><DollarSign className="w-4 h-4 mr-2" />Collect Payment</TabsTrigger>
           <TabsTrigger data-testid="fee-types-tab" value="feetypes" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Plus className="w-4 h-4 mr-2" />Fee Types</TabsTrigger>
           <TabsTrigger data-testid="daysheet-tab" value="daysheet" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Receipt className="w-4 h-4 mr-2" />Day Sheet</TabsTrigger>
+          <TabsTrigger data-testid="fee-status-tab" value="feestatus" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Search className="w-4 h-4 mr-2" />Fee Status</TabsTrigger>
         </TabsList>
 
         {/* Collect Payment */}
@@ -442,6 +448,97 @@ const Fees = () => {
                 </div>
               </div>
             </>
+          )}
+        </TabsContent>
+
+        {/* Fee Status */}
+        <TabsContent value="feestatus" className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Select Class & Section</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div><Label>Class *</Label>
+                <Select value={feeStatusClass} onValueChange={(v) => { setFeeStatusClass(v); setFeeStatusSection(''); }}>
+                  <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Class" /></SelectTrigger>
+                  <SelectContent>{classes.map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div><Label>Section *</Label>
+                <Select value={feeStatusSection} onValueChange={setFeeStatusSection}>
+                  <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Section" /></SelectTrigger>
+                  <SelectContent>{getSections(feeStatusClass).map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-end gap-2">
+                <Button data-testid="load-fee-status-btn" onClick={async () => {
+                  if (!feeStatusClass || !feeStatusSection) { toast.error('Select class & section'); return; }
+                  try { const r = await api.getFeeStatus({ studentClass: feeStatusClass, section: feeStatusSection }); setFeeStatusData(r.data); }
+                  catch (e) { toast.error('Failed to load'); }
+                }} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-12 active:scale-95 transition-transform">Load</Button>
+                <Button variant="outline" className="font-bold rounded-xl h-12" onClick={async () => {
+                  if (!feeStatusClass || !feeStatusSection) { toast.error('Select class & section'); return; }
+                  try {
+                    const r = await api.exportFeeStatus({ studentClass: feeStatusClass, section: feeStatusSection, format: 'xlsx' });
+                    const url = window.URL.createObjectURL(new Blob([r.data]));
+                    const link = document.createElement('a'); link.href = url; link.setAttribute('download', `fee_status_${feeStatusClass}_${feeStatusSection}.xlsx`);
+                    document.body.appendChild(link); link.click(); link.remove();
+                  } catch (e) { toast.error('Export failed'); }
+                }}><Download className="w-4 h-4 mr-2" />Export</Button>
+              </div>
+            </div>
+          </div>
+
+          {feeStatusData && (
+            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6 overflow-x-auto">
+              <h2 className="text-xl font-bold text-slate-800 mb-4">Fee Status - Class {feeStatusClass}-{feeStatusSection}</h2>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className="px-3 py-2 text-left font-bold uppercase text-xs text-slate-600">Roll</th>
+                    <th className="px-3 py-2 text-left font-bold uppercase text-xs text-slate-600">Name</th>
+                    <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Term 1</th>
+                    <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Term 2</th>
+                    <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Term 3</th>
+                    {feeStatusData.customFeeNames.map((cn) => <th key={cn} className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">{cn}</th>)}
+                    <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Total</th>
+                    <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Paid</th>
+                    <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Pending</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {feeStatusData.students.map((s) => (
+                    <tr key={s.rollNo} className="border-t border-slate-100 hover:bg-slate-50/80">
+                      <td className="px-3 py-2 font-semibold">{s.rollNo}</td>
+                      <td className="px-3 py-2 font-medium">{s.studentName}</td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${s.term1Paid >= s.term1Total ? 'bg-emerald-100 text-emerald-700' : s.term1Paid > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {'\u20B9'}{s.term1Paid}/{s.term1Total}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${s.term2Paid >= s.term2Total ? 'bg-emerald-100 text-emerald-700' : s.term2Paid > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {'\u20B9'}{s.term2Paid}/{s.term2Total}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${s.term3Paid >= s.term3Total ? 'bg-emerald-100 text-emerald-700' : s.term3Paid > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {'\u20B9'}{s.term3Paid}/{s.term3Total}
+                        </span>
+                      </td>
+                      {s.customFees.map((cf, i) => (
+                        <td key={i} className="px-3 py-2 text-center">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-bold ${cf.paid >= cf.total ? 'bg-emerald-100 text-emerald-700' : cf.paid > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {'\u20B9'}{cf.paid}/{cf.total}
+                          </span>
+                        </td>
+                      ))}
+                      <td className="px-3 py-2 text-center font-bold">{'\u20B9'}{s.totalExpected.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-center font-bold text-emerald-600">{'\u20B9'}{s.totalPaid.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-center font-bold text-rose-600">{'\u20B9'}{s.totalPending.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </TabsContent>
       </Tabs>

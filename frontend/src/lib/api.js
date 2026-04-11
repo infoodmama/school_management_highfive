@@ -98,6 +98,10 @@ export const api = {
   // Parent Portal
   getParentDashboard: (studentId) => axios.get(`${API}/parent/dashboard/${studentId}`),
 
+  // Fee Status
+  getFeeStatus: (params) => axios.get(`${API}/fees/status`, { params }),
+  exportFeeStatus: (params) => axios.get(`${API}/fees/status/export`, { params, responseType: 'blob' }),
+
   // Fee Reminders
   sendFeeReminders: () => axios.post(`${API}/fees/send-reminders`),
 

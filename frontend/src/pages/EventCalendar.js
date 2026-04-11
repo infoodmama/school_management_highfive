@@ -11,7 +11,7 @@ const EventCalendar = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', date: new Date().toISOString().split('T')[0] });
+  const [form, setForm] = useState({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const loadEvents = useCallback(async () => {
@@ -28,7 +28,7 @@ const EventCalendar = () => {
       await api.createEvent(form);
       toast.success('Event added');
       setShowDialog(false);
-      setForm({ title: '', description: '', date: new Date().toISOString().split('T')[0] });
+      setForm({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false });
       loadEvents();
     } catch (error) { toast.error('Failed to add event'); }
   };
@@ -77,6 +77,10 @@ const EventCalendar = () => {
                 <div><Label>Title *</Label><Input data-testid="event-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="rounded-xl h-12" placeholder="Event title" /></div>
                 <div><Label>Date *</Label><Input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="rounded-xl h-12" /></div>
                 <div><Label>Description *</Label><textarea required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full border border-slate-200 rounded-xl p-3 min-h-[100px] focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="Event details..." /></div>
+                <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <input type="checkbox" id="sendNotif" checked={form.sendNotification} onChange={(e) => setForm({ ...form, sendNotification: e.target.checked })} className="w-5 h-5 rounded accent-amber-500" />
+                  <label htmlFor="sendNotif" className="font-bold text-amber-800 cursor-pointer">Send WhatsApp notification to all parents</label>
+                </div>
                 <div className="flex justify-end gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={() => setShowDialog(false)} className="rounded-xl">Cancel</Button>
                   <Button data-testid="submit-event-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">Add Event</Button>
