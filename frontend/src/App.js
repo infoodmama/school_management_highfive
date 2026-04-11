@@ -10,7 +10,9 @@ import Expenses from './pages/Expenses';
 import Inventory from './pages/Inventory';
 import EventCalendar from './pages/EventCalendar';
 import HomeworkPage from './pages/HomeworkPage';
+import StaffPage from './pages/StaffPage';
 import Settings from './pages/Settings';
+import ParentPortal from './pages/ParentPortal';
 import Layout from './components/Layout';
 import { Toaster } from './components/ui/sonner';
 import './App.css';
@@ -20,6 +22,7 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <Routes>
+          <Route path="/parent" element={<ParentPortal />} />
           <Route path="/" element={<Layout />}>
             <Route index element={<Dashboard />} />
             <Route path="classes" element={<Classes />} />
@@ -31,6 +34,7 @@ function App() {
             <Route path="inventory" element={<Inventory />} />
             <Route path="calendar" element={<EventCalendar />} />
             <Route path="homework" element={<HomeworkPage />} />
+            <Route path="staff" element={<StaffPage />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>

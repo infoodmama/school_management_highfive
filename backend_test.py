@@ -424,6 +424,269 @@ class SchoolManagementAPITester:
         
         return success
 
+    def test_staff_crud(self):
+        """Test Staff CRUD operations"""
+        print("\n👨‍🏫 Testing Staff Management...")
+        
+        # Get initial staff
+        self.run_test("Get Staff (Initial)", "GET", "staff", 200)
+        
+        # Create a new staff member
+        staff_data = {
+            "name": "Test Teacher",
+            "role": "teacher",
+            "mobile": "9876543210",
+            "subject": "Mathematics",
+            "joiningDate": "2024-01-15",
+            "username": "testteach1",
+            "password": "testpass123"
+        }
+        success, created_staff = self.run_test("Create Staff", "POST", "staff", 200, staff_data)
+        
+        if success and created_staff:
+            staff_id = created_staff.get('id')
+            
+            # Get staff after creation
+            self.run_test("Get Staff (After Create)", "GET", "staff", 200)
+            
+            # Update the staff member
+            update_data = {
+                "name": "Updated Test Teacher",
+                "mobile": "9876543211"
+            }
+            self.run_test("Update Staff", "PUT", f"staff/{staff_id}", 200, update_data)
+            
+            # Delete the staff member
+            self.run_test("Delete Staff", "DELETE", f"staff/{staff_id}", 200)
+        
+        return success
+
+    def test_inventory_issue(self):
+        """Test Inventory Issue operations"""
+        print("\n📤 Testing Inventory Issue to Students...")
+        
+        # First create a class and student for testing
+        class_data = {
+            "className": "TestClass5",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Inventory Issue", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        student_data = {
+            "studentName": "Test Student Issue",
+            "rollNo": "ISSUE001",
+            "studentClass": "TestClass5",
+            "section": "A",
+            "fatherName": "Test Father",
+            "motherName": "Test Mother",
+            "mobile": "9876543210",
+            "address": "Test Address",
+            "feeTerm1": 5000.0,
+            "feeTerm2": 5000.0,
+            "feeTerm3": 5000.0
+        }
+        success, created_student = self.run_test("Create Student for Inventory Issue", "POST", "students", 200, student_data)
+        
+        if not success:
+            return False
+        
+        # Create an inventory item
+        inventory_data = {
+            "itemName": "Test Notebook",
+            "quantity": 10,
+            "category": "Stationery",
+            "purchaseDate": "2024-01-15",
+            "amount": 50.0
+        }
+        success, created_item = self.run_test("Create Inventory Item for Issue", "POST", "inventory", 200, inventory_data)
+        
+        if success and created_item:
+            item_id = created_item.get('id')
+            
+            # Issue inventory to student
+            issue_data = {
+                "itemId": item_id,
+                "rollNo": "ISSUE001",
+                "quantity": 2,
+                "date": "2024-01-20"
+            }
+            success, issued = self.run_test("Issue Inventory to Student", "POST", "inventory/issue", 200, issue_data)
+            
+            # Get inventory issues
+            self.run_test("Get Inventory Issues", "GET", "inventory/issues", 200)
+            
+            # Get inventory issues for specific student
+            student_id = created_student.get('id')
+            self.run_test("Get Inventory Issues (Student Filter)", "GET", "inventory/issues", 200, params={"studentId": student_id})
+            
+            # Clean up - delete the inventory item
+            self.run_test("Delete Inventory Item for Issue", "DELETE", f"inventory/{item_id}", 200)
+        
+        # Clean up - delete the student and class
+        if created_student:
+            student_id = created_student.get('id')
+            self.run_test("Delete Student for Inventory Issue", "DELETE", f"students/{student_id}", 200)
+        
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Class for Inventory Issue", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
+    def test_auth_endpoints(self):
+        """Test Authentication endpoints"""
+        print("\n🔐 Testing Authentication...")
+        
+        # Test staff login with invalid credentials
+        invalid_login = {
+            "username": "invalid",
+            "password": "invalid"
+        }
+        self.run_test("Staff Login (Invalid)", "POST", "auth/staff-login", 401, invalid_login)
+        
+        # Test parent login with invalid credentials
+        self.run_test("Parent Login (Invalid)", "POST", "auth/parent-login", 401, invalid_login)
+        
+        return True
+
+    def test_parent_dashboard(self):
+        """Test Parent Dashboard endpoint"""
+        print("\n👨‍👩‍👧‍👦 Testing Parent Dashboard...")
+        
+        # First create a class and student with parent credentials
+        class_data = {
+            "className": "TestClass6",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Parent Dashboard", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        student_data = {
+            "studentName": "Test Student Parent",
+            "rollNo": "PARENT001",
+            "studentClass": "TestClass6",
+            "section": "A",
+            "fatherName": "Test Father",
+            "motherName": "Test Mother",
+            "mobile": "9876543210",
+            "address": "Test Address",
+            "feeTerm1": 5000.0,
+            "feeTerm2": 5000.0,
+            "feeTerm3": 5000.0,
+            "parentUsername": "parent001",
+            "parentPassword": "parentpass123"
+        }
+        success, created_student = self.run_test("Create Student for Parent Dashboard", "POST", "students", 200, student_data)
+        
+        if success and created_student:
+            student_id = created_student.get('id')
+            
+            # Test parent dashboard endpoint
+            self.run_test("Get Parent Dashboard", "GET", f"parent/dashboard/{student_id}", 200)
+            
+            # Clean up - delete the student
+            self.run_test("Delete Student for Parent Dashboard", "DELETE", f"students/{student_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Class for Parent Dashboard", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
+    def test_invoice_endpoint(self):
+        """Test Invoice PDF endpoint"""
+        print("\n🧾 Testing Invoice PDF...")
+        
+        # Test with non-existent payment ID (should return 404)
+        self.run_test("Get Invoice (Non-existent)", "GET", "fees/invoice/nonexistent", 404)
+        
+        return True
+
+    def test_event_update(self):
+        """Test Event Update endpoint"""
+        print("\n📅 Testing Event Update...")
+        
+        # Create an event first
+        event_data = {
+            "title": "Test Event for Update",
+            "description": "This event will be updated",
+            "date": "2024-02-15"
+        }
+        success, created_event = self.run_test("Create Event for Update", "POST", "events", 200, event_data)
+        
+        if success and created_event:
+            event_id = created_event.get('id')
+            
+            # Update the event
+            update_data = {
+                "title": "Updated Test Event",
+                "description": "This event has been updated",
+                "date": "2024-02-16"
+            }
+            self.run_test("Update Event", "PUT", f"events/{event_id}", 200, update_data)
+            
+            # Clean up - delete the event
+            self.run_test("Delete Updated Event", "DELETE", f"events/{event_id}", 200)
+        
+        return success
+
+    def test_homework_update(self):
+        """Test Homework Update endpoint"""
+        print("\n📚 Testing Homework Update...")
+        
+        # First create a class for homework
+        class_data = {
+            "className": "TestClass7",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Homework Update", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        # Create homework
+        homework_data = {
+            "studentClass": "TestClass7",
+            "section": "A",
+            "subject": "Mathematics",
+            "title": "Test Homework for Update",
+            "description": "This homework will be updated",
+            "dueDate": "2024-02-20",
+            "assignedBy": "Test Teacher"
+        }
+        success, created_homework = self.run_test("Create Homework for Update", "POST", "homework", 200, homework_data)
+        
+        if success and created_homework:
+            homework_id = created_homework.get('id')
+            
+            # Update the homework
+            update_data = {
+                "studentClass": "TestClass7",
+                "section": "A",
+                "subject": "Mathematics",
+                "title": "Updated Test Homework",
+                "description": "This homework has been updated",
+                "dueDate": "2024-02-21",
+                "assignedBy": "Updated Teacher"
+            }
+            self.run_test("Update Homework", "PUT", f"homework/{homework_id}", 200, update_data)
+            
+            # Clean up - delete the homework
+            self.run_test("Delete Updated Homework", "DELETE", f"homework/{homework_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Class for Homework Update", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
     def run_all_tests(self):
         """Run all API tests"""
         print("🚀 Starting School Management System API Tests...")
@@ -444,6 +707,15 @@ class SchoolManagementAPITester:
         self.test_homework_crud()
         self.test_student_detail()
         self.test_fee_reminders()
+        
+        # Test new features for this iteration
+        self.test_staff_crud()
+        self.test_inventory_issue()
+        self.test_auth_endpoints()
+        self.test_parent_dashboard()
+        self.test_invoice_endpoint()
+        self.test_event_update()
+        self.test_homework_update()
         
         # Print summary
         print(f"\n📊 Test Summary:")

@@ -69,17 +69,37 @@ export const api = {
   createInventory: (data) => axios.post(`${API}/inventory`, data),
   updateInventory: (id, data) => axios.put(`${API}/inventory/${id}`, data),
   deleteInventory: (id) => axios.delete(`${API}/inventory/${id}`),
+  issueInventory: (data) => axios.post(`${API}/inventory/issue`, data),
+  getInventoryIssues: (params) => axios.get(`${API}/inventory/issues`, { params }),
 
   // Events
   getEvents: (params) => axios.get(`${API}/events`, { params }),
   createEvent: (data) => axios.post(`${API}/events`, data),
+  updateEvent: (id, data) => axios.put(`${API}/events/${id}`, data),
   deleteEvent: (id) => axios.delete(`${API}/events/${id}`),
 
   // Homework
   getHomework: (params) => axios.get(`${API}/homework`, { params }),
   createHomework: (data) => axios.post(`${API}/homework`, data),
+  updateHomework: (id, data) => axios.put(`${API}/homework/${id}`, data),
   deleteHomework: (id) => axios.delete(`${API}/homework/${id}`),
+
+  // Staff
+  getStaff: () => axios.get(`${API}/staff`),
+  createStaff: (data) => axios.post(`${API}/staff`, data),
+  updateStaff: (id, data) => axios.put(`${API}/staff/${id}`, data),
+  deleteStaff: (id) => axios.delete(`${API}/staff/${id}`),
+
+  // Auth
+  staffLogin: (data) => axios.post(`${API}/auth/staff-login`, data),
+  parentLogin: (data) => axios.post(`${API}/auth/parent-login`, data),
+
+  // Parent Portal
+  getParentDashboard: (studentId) => axios.get(`${API}/parent/dashboard/${studentId}`),
 
   // Fee Reminders
   sendFeeReminders: () => axios.post(`${API}/fees/send-reminders`),
+
+  // Invoice
+  getInvoiceUrl: (paymentId) => `${API}/fees/invoice/${paymentId}`,
 };

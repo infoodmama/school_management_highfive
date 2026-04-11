@@ -229,6 +229,39 @@ const Fees = () => {
                 </>
               )}
 
+              {/* Transaction History */}
+              {studentData.payments && studentData.payments.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                  <h2 className="text-xl font-bold text-slate-800 mb-4">Transaction History</h2>
+                  <div className="space-y-3">
+                    {studentData.payments.slice().reverse().map((p) => (
+                      <div key={p.id} className="p-4 bg-slate-50 rounded-xl">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-slate-900">{p.receiptNumber}</span>
+                            <span className="text-sm text-slate-600">{p.termNumber ? `Term ${p.termNumber}` : (p.feeName || 'Custom')}</span>
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${p.paymentMode === 'upi' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>{p.paymentMode.toUpperCase()}</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-emerald-600 text-lg">{'\u20B9'}{p.amount.toLocaleString()}</span>
+                            <a href={api.getInvoiceUrl(p.id)} target="_blank" rel="noopener noreferrer" data-testid={`download-invoice-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-xl font-bold text-xs transition-colors">
+                              <Download className="w-3 h-3" />Invoice
+                            </a>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-500">{typeof p.paymentDate === 'string' ? p.paymentDate.slice(0, 10) : ''}</p>
+                        {p.paymentMode === 'upi' && p.upiScreenshot && (
+                          <div className="mt-3">
+                            <p className="text-xs font-bold text-slate-500 mb-1">UPI Screenshot:</p>
+                            <img src={p.upiScreenshot} alt="UPI Payment" className="max-w-[200px] rounded-xl border border-slate-200" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Payment section */}
               {selectedFee && (
                 <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-sky-200 p-6">
@@ -240,7 +273,7 @@ const Fees = () => {
                     </div>
                     <div>
                       <Label className="text-base font-bold">Payment Amount *</Label>
-                      <Input data-testid="custom-pay-amount" type="number" value={customPayAmount} onChange={(e) => setCustomPayAmount(e.target.value)} className="rounded-xl h-12 mt-2 text-lg font-bold" placeholder="Enter amount to pay" min="1" max={selectedFee.amount} />
+                      <Input data-testid="custom-pay-amount" type="number" value={customPayAmount} onChange={(e) => { const val = parseFloat(e.target.value); if (val > selectedFee.amount) { toast.error('Amount cannot exceed pending amount'); return; } setCustomPayAmount(e.target.value); }} className="rounded-xl h-12 mt-2 text-lg font-bold" placeholder="Enter amount to pay" min="1" max={selectedFee.amount} />
                       <p className="text-xs text-slate-500 mt-1">You can pay partial or full amount. Pending: {'\u20B9'}{selectedFee.amount?.toLocaleString()}</p>
                     </div>
                     <div>

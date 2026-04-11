@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, ClipboardCheck, DollarSign } from 'lucide-react';
+import { ArrowLeft, User, ClipboardCheck, DollarSign, Package } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -25,7 +25,7 @@ const StudentDetail = () => {
   if (loading) return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div></div>;
   if (!data) return <div className="text-center py-20 text-slate-400">Student not found</div>;
 
-  const { student, attendance, attendanceStats, payments, paidTerms, paidCustomFees, customFees } = data;
+  const { student, attendance, attendanceStats, payments, paidTerms, paidCustomFees, customFees, inventoryIssued } = data;
 
   const getTermPaid = (n) => paidTerms?.[`term${n}`] || 0;
   const getTermTotal = (n) => student[`feeTerm${n}`] || 0;
@@ -166,6 +166,27 @@ const StudentDetail = () => {
           </div>
         )}
       </div>
+
+      {/* Inventory Issued */}
+      {inventoryIssued && inventoryIssued.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Package className="w-6 h-6 text-indigo-600" />
+            <h2 className="text-xl font-bold text-slate-800">Inventory Issued</h2>
+          </div>
+          <div className="space-y-2">
+            {inventoryIssued.map((iss) => (
+              <div key={iss.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                <div className="flex-1 grid grid-cols-3 gap-4">
+                  <p className="font-bold text-slate-900">{iss.itemName}</p>
+                  <p className="font-bold text-indigo-600">Qty: {iss.quantity}</p>
+                  <p className="text-slate-600">{iss.date}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

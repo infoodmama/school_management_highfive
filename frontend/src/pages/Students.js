@@ -23,7 +23,7 @@ const Students = () => {
   const [formData, setFormData] = useState({
     studentName: '', rollNo: '', studentClass: '', section: '',
     fatherName: '', motherName: '', mobile: '', address: '',
-    feeTerm1: '', feeTerm2: '', feeTerm3: '',
+    feeTerm1: '', feeTerm2: '', feeTerm3: '', parentUsername: '', parentPassword: '',
   });
   const [promoteData, setPromoteData] = useState({ fromClass: '', toClass: '' });
 
@@ -118,7 +118,7 @@ const Students = () => {
   };
 
   const resetForm = () => {
-    setFormData({ studentName: '', rollNo: '', studentClass: '', section: '', fatherName: '', motherName: '', mobile: '', address: '', feeTerm1: '', feeTerm2: '', feeTerm3: '' });
+    setFormData({ studentName: '', rollNo: '', studentClass: '', section: '', fatherName: '', motherName: '', mobile: '', address: '', feeTerm1: '', feeTerm2: '', feeTerm3: '', parentUsername: '', parentPassword: '' });
   };
 
   const openEditDialog = (student) => {
@@ -129,6 +129,7 @@ const Students = () => {
       fatherName: student.fatherName, motherName: student.motherName,
       mobile: student.mobile, address: student.address,
       feeTerm1: student.feeTerm1, feeTerm2: student.feeTerm2, feeTerm3: student.feeTerm3,
+      parentUsername: student.parentUsername || '', parentPassword: student.parentPassword || '',
     });
     setShowEditDialog(true);
   };
@@ -159,6 +160,8 @@ const Students = () => {
       <div><Label>Fee Term 1 *</Label><Input type="number" required value={formData.feeTerm1} onChange={(e) => updateField('feeTerm1', e.target.value)} className="rounded-xl h-12" /></div>
       <div><Label>Fee Term 2 *</Label><Input type="number" required value={formData.feeTerm2} onChange={(e) => updateField('feeTerm2', e.target.value)} className="rounded-xl h-12" /></div>
       <div><Label>Fee Term 3 *</Label><Input type="number" required value={formData.feeTerm3} onChange={(e) => updateField('feeTerm3', e.target.value)} className="rounded-xl h-12" /></div>
+      <div><Label>Parent Username</Label><Input value={formData.parentUsername} onChange={(e) => updateField('parentUsername', e.target.value)} className="rounded-xl h-12" placeholder="For parent portal login" /></div>
+      <div><Label>Parent Password</Label><Input value={formData.parentPassword} onChange={(e) => updateField('parentPassword', e.target.value)} className="rounded-xl h-12" placeholder="Parent portal password" /></div>
     </div>
   );
 
