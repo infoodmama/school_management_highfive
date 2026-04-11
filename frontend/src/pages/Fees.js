@@ -1,0 +1,383 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Search, DollarSign, Download, Receipt, Plus, Edit, Trash2 } from 'lucide-react';
+import { api } from '../lib/api';
+import { toast } from 'sonner';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { RadioGroup, RadioGroupItem } from '../components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+
+const Fees = () => {
+  const [activeTab, setActiveTab] = useState('payment');
+  const [classes, setClasses] = useState([]);
+  const [rollNo, setRollNo] = useState('');
+  const [studentData, setStudentData] = useState(null);
+  const [selectedFee, setSelectedFee] = useState(null); // { type: 'term'|'custom', number?, id?, amount, label }
+  const [paymentMode, setPaymentMode] = useState('cash');
+  const [upiScreenshot, setUpiScreenshot] = useState(null);
+  const [daySheetDate, setDaySheetDate] = useState(new Date().toISOString().split('T')[0]);
+  const [daySheetData, setDaySheetData] = useState(null);
+  const [exportFilters, setExportFilters] = useState({ startDate: '', endDate: '' });
+
+  // Fee Types state
+  const [feeTypes, setFeeTypes] = useState([]);
+  const [showFeeTypeDialog, setShowFeeTypeDialog] = useState(false);
+  const [editingFeeType, setEditingFeeType] = useState(null);
+  const [feeTypeForm, setFeeTypeForm] = useState({ feeName: '', amount: '', applicableClass: '', applicableSection: '', noticeStartDate: '', dueDate: '' });
+
+  const loadClasses = useCallback(async () => {
+    try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
+  }, []);
+
+  const loadFeeTypes = useCallback(async () => {
+    try { const r = await api.getFeeTypes(); setFeeTypes(r.data); } catch (e) { /* ignore */ }
+  }, []);
+
+  useEffect(() => { loadClasses(); loadFeeTypes(); }, [loadClasses, loadFeeTypes]);
+
+  const getSections = (cls) => { const f = classes.find((c) => c.className === cls); return f ? f.sections : []; };
+
+  const handleSearchStudent = async () => {
+    if (!rollNo) { toast.error('Please enter roll number'); return; }
+    try {
+      const response = await api.getStudentFees(rollNo);
+      setStudentData(response.data);
+      setSelectedFee(null);
+    } catch (error) { toast.error('Student not found'); setStudentData(null); }
+  };
+
+  const handleUpiUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try { const r = await api.uploadFile(file); setUpiScreenshot(r.data.url); toast.success('Screenshot uploaded'); }
+    catch (error) { toast.error('Failed to upload screenshot'); }
+  };
+
+  const handlePayment = async () => {
+    if (!selectedFee) return;
+    if (paymentMode === 'upi' && !upiScreenshot) { toast.error('Please upload UPI screenshot'); return; }
+    try {
+      const payload = {
+        studentId: studentData.student.id,
+        rollNo: studentData.student.rollNo,
+        studentName: studentData.student.studentName,
+        amount: selectedFee.amount,
+        paymentMode,
+        upiScreenshot: paymentMode === 'upi' ? upiScreenshot : null,
+      };
+      if (selectedFee.type === 'term') { payload.termNumber = selectedFee.number; }
+      else { payload.feeTypeId = selectedFee.id; payload.feeName = selectedFee.label; }
+
+      await api.createFeePayment(payload);
+      toast.success('Payment recorded. Receipt sent via WhatsApp');
+      setUpiScreenshot(null); setPaymentMode('cash'); setSelectedFee(null);
+      handleSearchStudent();
+    } catch (error) { toast.error('Failed to record payment'); }
+  };
+
+  const handleLoadDaySheet = async () => {
+    try { const r = await api.getDaySheet(daySheetDate); setDaySheetData(r.data); }
+    catch (error) { toast.error('Failed to load day sheet'); }
+  };
+
+  const handleExportFees = async (format) => {
+    if (!exportFilters.startDate || !exportFilters.endDate) { toast.error('Please select date range'); return; }
+    try {
+      const response = await api.exportFees({ ...exportFilters, format });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a'); link.href = url; link.setAttribute('download', `fees_report.${format}`);
+      document.body.appendChild(link); link.click(); link.remove();
+    } catch (error) { toast.error('Failed to export'); }
+  };
+
+  const isTermPaid = (termNumber) => {
+    if (!studentData) return false;
+    const expected = studentData.student[`feeTerm${termNumber}`];
+    const paid = studentData.paidTerms?.[`term${termNumber}`] || 0;
+    return paid >= expected;
+  };
+
+  const isCustomFeePaid = (feeId, amount) => {
+    if (!studentData) return false;
+    const paid = studentData.paidCustomFees?.[feeId] || 0;
+    return paid >= amount;
+  };
+
+  // Fee Types CRUD
+  const resetFeeTypeForm = () => { setFeeTypeForm({ feeName: '', amount: '', applicableClass: '', applicableSection: '', noticeStartDate: '', dueDate: '' }); setEditingFeeType(null); };
+
+  const handleFeeTypeSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const data = { ...feeTypeForm, amount: parseFloat(feeTypeForm.amount) };
+      if (editingFeeType) {
+        await api.updateFeeType(editingFeeType.id, data);
+        toast.success('Fee type updated');
+      } else {
+        await api.createFeeType(data);
+        toast.success('Fee type added');
+      }
+      setShowFeeTypeDialog(false); resetFeeTypeForm(); loadFeeTypes();
+    } catch (error) { toast.error('Failed to save fee type'); }
+  };
+
+  const openEditFeeType = (ft) => {
+    setEditingFeeType(ft);
+    setFeeTypeForm({ feeName: ft.feeName, amount: ft.amount, applicableClass: ft.applicableClass || '', applicableSection: ft.applicableSection || '', noticeStartDate: ft.noticeStartDate || '', dueDate: ft.dueDate || '' });
+    setShowFeeTypeDialog(true);
+  };
+
+  const handleDeleteFeeType = async (id) => {
+    if (!window.confirm('Delete this fee type?')) return;
+    try { await api.deleteFeeType(id); toast.success('Fee type deleted'); loadFeeTypes(); }
+    catch (error) { toast.error('Failed to delete'); }
+  };
+
+  return (
+    <div className="max-w-[1600px] mx-auto space-y-6">
+      <div>
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900" style={{ fontFamily: 'Nunito' }}>Fee Management</h1>
+        <p className="text-base font-medium text-slate-600 mt-1" style={{ fontFamily: 'Figtree' }}>Manage student fee payments and custom fee types</p>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="bg-slate-100 p-1 rounded-xl inline-flex">
+          <TabsTrigger data-testid="payment-tab" value="payment" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><DollarSign className="w-4 h-4 mr-2" />Collect Payment</TabsTrigger>
+          <TabsTrigger data-testid="fee-types-tab" value="feetypes" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Plus className="w-4 h-4 mr-2" />Fee Types</TabsTrigger>
+          <TabsTrigger data-testid="daysheet-tab" value="daysheet" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Receipt className="w-4 h-4 mr-2" />Day Sheet</TabsTrigger>
+        </TabsList>
+
+        {/* Collect Payment */}
+        <TabsContent value="payment" className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Search Student</h2>
+            <div className="flex gap-4">
+              <div className="flex-1"><Label>Roll Number *</Label><Input data-testid="fee-rollno-input" value={rollNo} onChange={(e) => setRollNo(e.target.value)} className="rounded-xl h-12" placeholder="Enter roll number" /></div>
+              <div className="flex items-end"><Button data-testid="search-student-btn" onClick={handleSearchStudent} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-12 active:scale-95 transition-transform"><Search className="w-5 h-5 mr-2" />Search</Button></div>
+            </div>
+          </div>
+
+          {studentData && (
+            <>
+              <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                <h2 className="text-xl font-bold text-slate-800 mb-4">Student Information</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Name</p><p className="text-lg font-bold text-slate-900">{studentData.student.studentName}</p></div>
+                  <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Roll No</p><p className="text-lg font-bold text-slate-900">{studentData.student.rollNo}</p></div>
+                  <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Class</p><p className="text-lg font-bold text-slate-900">{studentData.student.studentClass} - {studentData.student.section}</p></div>
+                  <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Mobile</p><p className="text-lg font-bold text-slate-900">{studentData.student.mobile}</p></div>
+                </div>
+              </div>
+
+              {/* Term Fees */}
+              <h3 className="text-lg font-bold text-slate-800">Term Fees</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {[1, 2, 3].map((termNum) => {
+                  const termAmount = studentData.student[`feeTerm${termNum}`];
+                  const paid = isTermPaid(termNum);
+                  return (
+                    <div key={termNum} data-testid={`term-${termNum}-card`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-100'}`}>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold text-slate-900">Term {termNum}</h3>
+                        {paid && <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>}
+                      </div>
+                      <p className="text-3xl font-extrabold text-slate-900 mb-4">{'\u20B9'}{termAmount?.toLocaleString()}</p>
+                      {!paid && <Button data-testid={`pay-term-${termNum}-btn`} onClick={() => setSelectedFee({ type: 'term', number: termNum, amount: termAmount, label: `Term ${termNum}` })} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Pay Now</Button>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Custom Fees */}
+              {studentData.customFees?.length > 0 && (
+                <>
+                  <h3 className="text-lg font-bold text-slate-800">Custom Fees</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {studentData.customFees.map((cf) => {
+                      const paid = isCustomFeePaid(cf.id, cf.amount);
+                      return (
+                        <div key={cf.id} data-testid={`custom-fee-${cf.id}`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-100'}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-lg font-bold text-slate-900">{cf.feeName}</h3>
+                            {paid && <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>}
+                          </div>
+                          {cf.dueDate && <p className="text-sm text-rose-600 font-medium mb-2">Due: {cf.dueDate}</p>}
+                          {cf.noticeStartDate && <p className="text-xs text-slate-500 mb-2">Notice from: {cf.noticeStartDate}</p>}
+                          <p className="text-3xl font-extrabold text-slate-900 mb-4">{'\u20B9'}{cf.amount?.toLocaleString()}</p>
+                          {!paid && <Button onClick={() => setSelectedFee({ type: 'custom', id: cf.id, amount: cf.amount, label: cf.feeName })} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Pay Now</Button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* Payment section */}
+              {selectedFee && (
+                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-sky-200 p-6">
+                  <h2 className="text-xl font-bold text-slate-800 mb-4">Payment for: {selectedFee.label} - {'\u20B9'}{selectedFee.amount?.toLocaleString()}</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <Label>Payment Mode *</Label>
+                      <RadioGroup value={paymentMode} onValueChange={setPaymentMode} className="flex gap-4 mt-2">
+                        <div className="flex items-center space-x-2"><RadioGroupItem value="cash" id="cash" data-testid="payment-mode-cash" /><Label htmlFor="cash" className="cursor-pointer font-bold">Cash</Label></div>
+                        <div className="flex items-center space-x-2"><RadioGroupItem value="upi" id="upi" data-testid="payment-mode-upi" /><Label htmlFor="upi" className="cursor-pointer font-bold">UPI</Label></div>
+                      </RadioGroup>
+                    </div>
+                    {paymentMode === 'upi' && (
+                      <div>
+                        <Label>Upload UPI Screenshot *</Label>
+                        <input type="file" accept="image/*" onChange={handleUpiUpload} data-testid="upi-screenshot-input" className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200" />
+                        {upiScreenshot && <img src={upiScreenshot} alt="UPI" className="mt-4 max-w-xs rounded-xl border border-slate-200" />}
+                      </div>
+                    )}
+                    <div className="flex justify-end gap-3">
+                      <Button variant="outline" onClick={() => setSelectedFee(null)} className="rounded-xl">Cancel</Button>
+                      <Button data-testid="confirm-payment-btn" onClick={handlePayment} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Confirm Payment</Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* Fee Types Management */}
+        <TabsContent value="feetypes" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-bold text-slate-800">Custom Fee Types</h2>
+            <Dialog open={showFeeTypeDialog} onOpenChange={(open) => { setShowFeeTypeDialog(open); if (!open) resetFeeTypeForm(); }}>
+              <DialogTrigger asChild>
+                <Button data-testid="add-fee-type-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Add Fee Type</Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-lg">
+                <DialogHeader><DialogTitle className="text-2xl font-bold">{editingFeeType ? 'Edit Fee Type' : 'Add Fee Type'}</DialogTitle></DialogHeader>
+                <form onSubmit={handleFeeTypeSubmit} className="space-y-4">
+                  <div><Label>Fee Name *</Label><Input data-testid="fee-type-name" required value={feeTypeForm.feeName} onChange={(e) => setFeeTypeForm({ ...feeTypeForm, feeName: e.target.value })} className="rounded-xl h-12" placeholder="e.g., Lab Fee, Sports Fee" /></div>
+                  <div><Label>Amount *</Label><Input data-testid="fee-type-amount" type="number" required value={feeTypeForm.amount} onChange={(e) => setFeeTypeForm({ ...feeTypeForm, amount: e.target.value })} className="rounded-xl h-12" placeholder="0.00" /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Applicable Class (optional)</Label>
+                      <Select value={feeTypeForm.applicableClass || '_all'} onValueChange={(v) => setFeeTypeForm({ ...feeTypeForm, applicableClass: v === '_all' ? '' : v, applicableSection: '' })}>
+                        <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="All Classes" /></SelectTrigger>
+                        <SelectContent><SelectItem value="_all">All Classes</SelectItem>{classes.map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Applicable Section (optional)</Label>
+                      <Select value={feeTypeForm.applicableSection || '_all'} onValueChange={(v) => setFeeTypeForm({ ...feeTypeForm, applicableSection: v === '_all' ? '' : v })}>
+                        <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="All Sections" /></SelectTrigger>
+                        <SelectContent><SelectItem value="_all">All Sections</SelectItem>{getSections(feeTypeForm.applicableClass).map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><Label>Notice Start Date</Label><Input type="date" value={feeTypeForm.noticeStartDate} onChange={(e) => setFeeTypeForm({ ...feeTypeForm, noticeStartDate: e.target.value })} className="rounded-xl h-12" /></div>
+                    <div><Label>Due Date</Label><Input type="date" value={feeTypeForm.dueDate} onChange={(e) => setFeeTypeForm({ ...feeTypeForm, dueDate: e.target.value })} className="rounded-xl h-12" /></div>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4">
+                    <Button type="button" variant="outline" onClick={() => { setShowFeeTypeDialog(false); resetFeeTypeForm(); }} className="rounded-xl">Cancel</Button>
+                    <Button data-testid="submit-fee-type-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">{editingFeeType ? 'Update' : 'Add'}</Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+          </div>
+
+          {feeTypes.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 flex flex-col items-center justify-center h-48">
+              <p className="text-slate-400 font-medium">No custom fee types yet</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {feeTypes.map((ft) => (
+                <div key={ft.id} data-testid={`fee-type-card-${ft.id}`} className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] border border-slate-100 p-6 transition-all duration-300 hover:-translate-y-0.5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-lg font-bold text-slate-900">{ft.feeName}</h3>
+                    <div className="flex gap-1">
+                      <button onClick={() => openEditFeeType(ft)} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                      <button onClick={() => handleDeleteFeeType(ft.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                    </div>
+                  </div>
+                  <p className="text-2xl font-extrabold text-slate-900 mb-3">{'\u20B9'}{ft.amount?.toLocaleString()}</p>
+                  <div className="space-y-1 text-sm text-slate-600">
+                    <p>Class: <span className="font-bold text-slate-800">{ft.applicableClass || 'All'}</span></p>
+                    <p>Section: <span className="font-bold text-slate-800">{ft.applicableSection || 'All'}</span></p>
+                    {ft.noticeStartDate && <p>Notice: <span className="font-medium">{ft.noticeStartDate}</span></p>}
+                    {ft.dueDate && <p className="text-rose-600 font-bold">Due: {ft.dueDate}</p>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* Day Sheet */}
+        <TabsContent value="daysheet" className="space-y-6">
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Select Date</h2>
+            <div className="flex gap-4">
+              <div className="flex-1"><Label>Date *</Label><Input type="date" value={daySheetDate} onChange={(e) => setDaySheetDate(e.target.value)} className="rounded-xl h-12" /></div>
+              <div className="flex items-end"><Button data-testid="load-daysheet-btn" onClick={handleLoadDaySheet} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-12 active:scale-95 transition-transform">Load Day Sheet</Button></div>
+            </div>
+          </div>
+
+          {daySheetData && (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                  <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Total Collection</p>
+                  <p className="text-3xl font-extrabold text-slate-900 mt-2">{'\u20B9'}{daySheetData.total.toLocaleString()}</p>
+                </div>
+                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                  <p className="text-sm font-bold uppercase tracking-widest text-slate-400">UPI Payments</p>
+                  <p className="text-3xl font-extrabold text-sky-600 mt-2">{'\u20B9'}{daySheetData.upiTotal.toLocaleString()}</p>
+                </div>
+                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                  <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Cash Payments</p>
+                  <p className="text-3xl font-extrabold text-emerald-600 mt-2">{'\u20B9'}{daySheetData.cashTotal.toLocaleString()}</p>
+                </div>
+                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                  <p className="text-sm font-bold uppercase tracking-widest text-slate-400">Transactions</p>
+                  <p className="text-3xl font-extrabold text-amber-600 mt-2">{daySheetData.count}</p>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                <h2 className="text-xl font-bold text-slate-800 mb-4">Payment Details</h2>
+                <div className="space-y-2">
+                  {daySheetData.payments.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                      <div className="flex-1 grid grid-cols-5 gap-4">
+                        <p className="font-bold text-slate-900">{p.rollNo}</p>
+                        <p className="font-medium text-slate-700">{p.studentName}</p>
+                        <p className="text-slate-600">{p.termNumber ? `Term ${p.termNumber}` : p.feeName || 'Custom'}</p>
+                        <p className="font-bold text-emerald-600">{'\u20B9'}{p.amount.toLocaleString()}</p>
+                        <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-xs font-bold ${p.paymentMode === 'upi' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>{p.paymentMode.toUpperCase()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+                <h2 className="text-xl font-bold text-slate-800 mb-4">Export Fees</h2>
+                <div className="flex gap-4 items-end">
+                  <div className="flex-1"><Label>Start Date *</Label><Input type="date" value={exportFilters.startDate} onChange={(e) => setExportFilters({ ...exportFilters, startDate: e.target.value })} className="rounded-xl h-12" /></div>
+                  <div className="flex-1"><Label>End Date *</Label><Input type="date" value={exportFilters.endDate} onChange={(e) => setExportFilters({ ...exportFilters, endDate: e.target.value })} className="rounded-xl h-12" /></div>
+                  <Button onClick={() => handleExportFees('csv')} variant="outline" className="font-bold rounded-xl h-12"><Download className="w-4 h-4 mr-2" />CSV</Button>
+                  <Button onClick={() => handleExportFees('xlsx')} variant="outline" className="font-bold rounded-xl h-12"><Download className="w-4 h-4 mr-2" />Excel</Button>
+                </div>
+              </div>
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+};
+
+export default Fees;
