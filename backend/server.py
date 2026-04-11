@@ -822,8 +822,9 @@ async def create_fee_payment(payment: FeePaymentCreate):
     student = await db.students.find_one({"rollNo": payment.rollNo}, {"_id": 0})
     if student and settings_doc:
         fee_label = f"Term {payment.termNumber}" if payment.termNumber else (payment.feeName or 'Custom Fee')
-        # Build invoice URL for WhatsApp document
-        invoice_url = f"{os.environ.get('REACT_APP_BACKEND_URL', 'https://localhost')}/api/fees/invoice/{payment_obj.id}"
+        # Build public invoice URL for WhatsApp document (view endpoint, no download header)
+        backend_url = os.environ.get('REACT_APP_BACKEND_URL', '')
+        invoice_url = f"{backend_url}/api/fees/invoice-view/{payment_obj.id}"
         await send_fee_paid_message(student.get('mobile', ''), invoice_url, payment.amount, fee_label, payment.studentName, settings_doc)
     return payment_obj
 
@@ -835,6 +836,16 @@ async def download_invoice(payment_id: str):
     if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
     buf = generate_invoice_pdf(payment, student)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=invoice_{payment['receiptNumber']}.pdf"})
+
+@api_router.get("/fees/invoice-view/{payment_id}")
+async def view_invoice(payment_id: str):
+    """Public PDF view endpoint (no attachment header) - for WhatsApp document link"""
+    payment = await db.fee_payments.find_one({"id": payment_id}, {"_id": 0})
+    if not payment: raise HTTPException(status_code=404, detail="Payment not found")
+    student = await db.students.find_one({"rollNo": payment['rollNo']}, {"_id": 0})
+    if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
+    buf = generate_invoice_pdf(payment, student)
+    return StreamingResponse(buf, media_type="application/pdf")
 
 @api_router.get("/fees/day-sheet")
 async def get_day_sheet(date: Optional[str] = None):

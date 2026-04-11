@@ -152,14 +152,20 @@ const Attendance = () => {
                     <div key={record.studentId} data-testid={`attendance-row-${record.rollNo}`} className="flex items-center justify-between p-4 bg-slate-50 rounded-xl hover:bg-slate-100 transition-colors">
                       <div className="flex-1"><p className="font-bold text-slate-900">{record.rollNo} - {record.studentName}</p></div>
                       <div className="flex gap-2">
-                        {['present', 'absent', 'holiday', 'undefined'].map((status) => (
+                        {['present', 'absent', 'holiday', 'undefined'].map((status) => {
+                          const isSelected = record.status === status;
+                          const colorMap = {
+                            present: { filled: 'bg-emerald-500 text-white ring-2 ring-emerald-300', outline: 'border-2 border-emerald-500 text-emerald-600 hover:bg-emerald-50' },
+                            absent: { filled: 'bg-rose-500 text-white ring-2 ring-rose-300', outline: 'border-2 border-rose-500 text-rose-600 hover:bg-rose-50' },
+                            holiday: { filled: 'bg-orange-500 text-white ring-2 ring-orange-300', outline: 'border-2 border-orange-400 text-orange-600 hover:bg-orange-50' },
+                            undefined: { filled: 'bg-slate-500 text-white ring-2 ring-slate-300', outline: 'border-2 border-slate-300 text-slate-500 hover:bg-slate-50' },
+                          };
+                          return (
                           <button key={status} data-testid={`mark-${status}-${record.rollNo}`} onClick={() => handleMarkAttendance(index, status)}
-                            className={`px-4 py-2 rounded-full text-xs font-bold text-white transition-all active:scale-95 ${
-                              record.status === status ? `ring-2 ring-offset-1 ${status === 'present' ? 'bg-emerald-600 ring-emerald-300' : status === 'absent' ? 'bg-rose-600 ring-rose-300' : status === 'holiday' ? 'bg-orange-500 ring-orange-300' : 'bg-slate-500 ring-slate-300'}`
-                              : `${status === 'present' ? 'bg-emerald-500 hover:bg-emerald-600' : status === 'absent' ? 'bg-rose-500 hover:bg-rose-600' : status === 'holiday' ? 'bg-orange-400 hover:bg-orange-500' : 'bg-slate-300 hover:bg-slate-400'}`
-                            }`}
+                            className={`px-4 py-2 rounded-full text-xs font-bold transition-all active:scale-95 ${isSelected ? colorMap[status].filled : colorMap[status].outline}`}
                           >{status.charAt(0).toUpperCase() + status.slice(1)}</button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
