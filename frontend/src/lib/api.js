@@ -91,6 +91,7 @@ export const api = {
   deleteStaff: (id) => axios.delete(`${API}/staff/${id}`),
 
   // Auth
+  login: (data) => axios.post(`${API}/auth/login`, data),
   staffLogin: (data) => axios.post(`${API}/auth/staff-login`, data),
   parentLogin: (data) => axios.post(`${API}/auth/parent-login`, data),
 

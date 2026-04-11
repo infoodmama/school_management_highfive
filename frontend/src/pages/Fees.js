@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, DollarSign, Download, Receipt, Plus, Edit, Trash2 } from 'lucide-react';
+import { Search, DollarSign, Download, Receipt, Plus, Edit, Trash2, Eye } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -15,9 +15,10 @@ const Fees = () => {
   const [classes, setClasses] = useState([]);
   const [rollNo, setRollNo] = useState('');
   const [studentData, setStudentData] = useState(null);
-  const [selectedFee, setSelectedFee] = useState(null); // { type: 'term'|'custom', number?, id?, amount, label, totalAmount }
+  const [selectedFee, setSelectedFee] = useState(null);
   const [customPayAmount, setCustomPayAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('cash');
+  const [upiPreviewUrl, setUpiPreviewUrl] = useState(null);
   const [upiScreenshot, setUpiScreenshot] = useState(null);
   const [daySheetDate, setDaySheetDate] = useState(new Date().toISOString().split('T')[0]);
   const [daySheetData, setDaySheetData] = useState(null);
@@ -242,30 +243,30 @@ const Fees = () => {
                             <span className="text-sm text-slate-600">{p.termNumber ? `Term ${p.termNumber}` : (p.feeName || 'Custom')}</span>
                             <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${p.paymentMode === 'upi' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>{p.paymentMode.toUpperCase()}</span>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
                             <span className="font-bold text-emerald-600 text-lg">{'\u20B9'}{p.amount.toLocaleString()}</span>
+                            {p.paymentMode === 'upi' && p.upiScreenshot && (
+                              <button onClick={() => setUpiPreviewUrl(p.upiScreenshot)} data-testid={`view-upi-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-xl font-bold text-xs transition-colors">
+                                <Eye className="w-3 h-3" />UPI
+                              </button>
+                            )}
                             <a href={api.getInvoiceUrl(p.id)} target="_blank" rel="noopener noreferrer" data-testid={`download-invoice-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-xl font-bold text-xs transition-colors">
                               <Download className="w-3 h-3" />Invoice
                             </a>
                           </div>
                         </div>
                         <p className="text-xs text-slate-500">{typeof p.paymentDate === 'string' ? p.paymentDate.slice(0, 10) : ''}</p>
-                        {p.paymentMode === 'upi' && p.upiScreenshot && (
-                          <div className="mt-3">
-                            <p className="text-xs font-bold text-slate-500 mb-1">UPI Screenshot:</p>
-                            <img src={p.upiScreenshot} alt="UPI Payment" className="max-w-[200px] rounded-xl border border-slate-200" />
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Payment section */}
-              {selectedFee && (
-                <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-sky-200 p-6">
-                  <h2 className="text-xl font-bold text-slate-800 mb-4">Payment for: {selectedFee.label}</h2>
+              {/* Payment Dialog */}
+              <Dialog open={!!selectedFee} onOpenChange={(open) => { if (!open) { setSelectedFee(null); setCustomPayAmount(''); } }}>
+                <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+                  <DialogHeader><DialogTitle className="text-2xl font-bold">Payment for: {selectedFee?.label}</DialogTitle></DialogHeader>
+                  {selectedFee && (
                   <div className="space-y-4">
                     <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-4">
                       <div><p className="text-xs font-bold uppercase tracking-widest text-slate-400">Total Fee</p><p className="text-lg font-extrabold text-slate-900">{'\u20B9'}{selectedFee.totalAmount?.toLocaleString()}</p></div>
@@ -274,7 +275,7 @@ const Fees = () => {
                     <div>
                       <Label className="text-base font-bold">Payment Amount *</Label>
                       <Input data-testid="custom-pay-amount" type="number" value={customPayAmount} onChange={(e) => { const val = parseFloat(e.target.value); if (val > selectedFee.amount) { toast.error('Amount cannot exceed pending amount'); return; } setCustomPayAmount(e.target.value); }} className="rounded-xl h-12 mt-2 text-lg font-bold" placeholder="Enter amount to pay" min="1" max={selectedFee.amount} />
-                      <p className="text-xs text-slate-500 mt-1">You can pay partial or full amount. Pending: {'\u20B9'}{selectedFee.amount?.toLocaleString()}</p>
+                      <p className="text-xs text-slate-500 mt-1">Max: {'\u20B9'}{selectedFee.amount?.toLocaleString()}</p>
                     </div>
                     <div>
                       <Label>Payment Mode *</Label>
@@ -290,13 +291,22 @@ const Fees = () => {
                         {upiScreenshot && <img src={upiScreenshot} alt="UPI" className="mt-4 max-w-xs rounded-xl border border-slate-200" />}
                       </div>
                     )}
-                    <div className="flex justify-end gap-3">
+                    <div className="flex justify-end gap-3 pt-2">
                       <Button variant="outline" onClick={() => { setSelectedFee(null); setCustomPayAmount(''); }} className="rounded-xl">Cancel</Button>
-                      <Button data-testid="confirm-payment-btn" onClick={handlePayment} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Confirm Payment ({'\u20B9'}{(parseFloat(customPayAmount) || 0).toLocaleString()})</Button>
+                      <Button data-testid="confirm-payment-btn" onClick={handlePayment} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">Confirm ({'\u20B9'}{(parseFloat(customPayAmount) || 0).toLocaleString()})</Button>
                     </div>
                   </div>
-                </div>
-              )}
+                  )}
+                </DialogContent>
+              </Dialog>
+
+              {/* UPI Screenshot Preview Dialog */}
+              <Dialog open={!!upiPreviewUrl} onOpenChange={(open) => { if (!open) setUpiPreviewUrl(null); }}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader><DialogTitle className="text-xl font-bold">UPI Payment Screenshot</DialogTitle></DialogHeader>
+                  {upiPreviewUrl && <img src={upiPreviewUrl} alt="UPI Screenshot" className="w-full rounded-xl border border-slate-200" />}
+                </DialogContent>
+              </Dialog>
             </>
           )}
         </TabsContent>

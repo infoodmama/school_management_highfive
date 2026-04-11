@@ -540,6 +540,33 @@ class SchoolManagementAPITester:
         """Test Authentication endpoints"""
         print("\n🔐 Testing Authentication...")
         
+        # Test admin login with correct credentials
+        admin_login = {
+            "username": "admin",
+            "password": "12345678"
+        }
+        success, response = self.run_test("Admin Login (Valid)", "POST", "auth/login", 200, admin_login)
+        if success:
+            print(f"   Admin role: {response.get('role')}")
+            print(f"   Admin user: {response.get('user', {}).get('name')}")
+        
+        # Test teacher login with correct credentials
+        teacher_login = {
+            "username": "teach1",
+            "password": "pass123"
+        }
+        success, response = self.run_test("Teacher Login (Valid)", "POST", "auth/login", 200, teacher_login)
+        if success:
+            print(f"   Teacher role: {response.get('role')}")
+            print(f"   Teacher user: {response.get('user', {}).get('name')}")
+        
+        # Test office staff login (if exists)
+        office_login = {
+            "username": "office1",
+            "password": "office123"
+        }
+        success, response = self.run_test("Office Staff Login (Test)", "POST", "auth/login", 401, office_login)
+        
         # Test staff login with invalid credentials
         invalid_login = {
             "username": "invalid",
@@ -549,6 +576,13 @@ class SchoolManagementAPITester:
         
         # Test parent login with invalid credentials
         self.run_test("Parent Login (Invalid)", "POST", "auth/parent-login", 401, invalid_login)
+        
+        # Test admin login with wrong password
+        wrong_admin = {
+            "username": "admin",
+            "password": "wrongpass"
+        }
+        self.run_test("Admin Login (Wrong Password)", "POST", "auth/login", 401, wrong_admin)
         
         return True
 

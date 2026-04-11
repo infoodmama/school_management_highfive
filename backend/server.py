@@ -359,6 +359,17 @@ def generate_invoice_pdf(payment_data, student_data):
 
 # ==================== AUTH ROUTES ====================
 
+@api_router.post("/auth/login")
+async def login(data: LoginRequest):
+    # Check admin
+    if data.username == "admin" and data.password == "12345678":
+        return {"success": True, "user": {"name": "Admin", "username": "admin"}, "role": "admin"}
+    # Check staff
+    staff = await db.staff.find_one({"username": data.username, "password": data.password}, {"_id": 0})
+    if staff:
+        return {"success": True, "user": {k: v for k, v in staff.items() if k != 'password'}, "role": staff['role']}
+    raise HTTPException(status_code=401, detail="Invalid credentials")
+
 @api_router.post("/auth/staff-login")
 async def staff_login(data: LoginRequest):
     staff = await db.staff.find_one({"username": data.username, "password": data.password}, {"_id": 0})
