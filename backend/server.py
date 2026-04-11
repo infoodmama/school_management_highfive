@@ -458,16 +458,27 @@ async def get_database_settings():
 @api_router.put("/settings/database")
 async def update_database_settings(data: DatabaseSettings):
     global client, db
+    # Add authSource=admin if not already in URL for authenticated connections
+    mongo_url = data.mongoUrl
+    if '@' in mongo_url and 'authSource' not in mongo_url:
+        if '?' not in mongo_url:
+            if not mongo_url.endswith('/'):
+                mongo_url = f"{mongo_url}/"
+            mongo_url = f"{mongo_url}?authSource=admin"
+        else:
+            mongo_url = f"{mongo_url}&authSource=admin"
     try:
-        test_client = AsyncIOMotorClient(data.mongoUrl, serverSelectionTimeoutMS=5000)
+        test_client = AsyncIOMotorClient(mongo_url, serverSelectionTimeoutMS=5000)
         await test_client[data.dbName].command('ping')
         test_client.close()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Could not connect: {str(e)}")
-    await db.settings.update_one({"type": "database"}, {"$set": {"mongoUrl": data.mongoUrl, "dbName": data.dbName}}, upsert=True)
+    # Switch connection
     client.close()
-    client = AsyncIOMotorClient(data.mongoUrl)
+    client = AsyncIOMotorClient(mongo_url)
     db = client[data.dbName]
+    # Save settings in the NEW database
+    await db.settings.update_one({"type": "database"}, {"$set": {"mongoUrl": data.mongoUrl, "dbName": data.dbName}}, upsert=True)
     return {"message": "Database connected successfully"}
 
 # ==================== STUDENT ROUTES ====================
