@@ -1133,14 +1133,38 @@ async def parent_dashboard(student_id: str):
     attendance = await db.attendance.find({"studentId": student_id}, {"_id": 0}).to_list(10000)
     total_days = len(attendance)
     present_days = sum(1 for a in attendance if a['status'] == 'present')
+    absent_days = sum(1 for a in attendance if a['status'] == 'absent')
     payments = await db.fee_payments.find({"studentId": student_id}, {"_id": 0}).to_list(100)
     events = await db.events.find({}, {"_id": 0}).to_list(100)
     homework = await db.homework.find({"studentClass": student.get('studentClass', ''), "section": student.get('section', '')}, {"_id": 0}).to_list(100)
+    # Fee structure
+    custom_fees = await db.fee_types.find({
+        "$or": [
+            {"applicableClass": student.get('studentClass', ''), "applicableSection": student.get('section', '')},
+            {"applicableClass": student.get('studentClass', ''), "applicableSection": {"$in": [None, ""]}},
+            {"applicableClass": {"$in": [None, ""]}, "applicableSection": {"$in": [None, ""]}},
+        ]
+    }, {"_id": 0}).to_list(500)
+    paid_terms, paid_custom = {}, {}
+    for p in payments:
+        if p.get('termNumber'):
+            k = f"term{p['termNumber']}"
+            paid_terms[k] = paid_terms.get(k, 0) + p['amount']
+        if p.get('feeTypeId'):
+            paid_custom[p['feeTypeId']] = paid_custom.get(p['feeTypeId'], 0) + p['amount']
     return {
         "student": {k: v for k, v in student.items() if k != 'parentPassword'},
-        "attendanceStats": {"totalDays": total_days, "presentDays": present_days, "percentage": round(present_days / total_days * 100, 1) if total_days > 0 else 0},
+        "attendanceStats": {"totalDays": total_days, "presentDays": present_days, "absentDays": absent_days,
+                            "percentage": round(present_days / total_days * 100, 1) if total_days > 0 else 0},
         "recentAttendance": attendance[-30:] if attendance else [],
         "payments": payments, "events": events, "homework": homework,
+        "feeStructure": {
+            "term1": {"total": student.get('feeTerm1', 0), "paid": paid_terms.get('term1', 0)},
+            "term2": {"total": student.get('feeTerm2', 0), "paid": paid_terms.get('term2', 0)},
+            "term3": {"total": student.get('feeTerm3', 0), "paid": paid_terms.get('term3', 0)},
+            "customFees": [{"id": cf['id'], "feeName": cf['feeName'], "total": cf['amount'], "paid": paid_custom.get(cf['id'], 0), "dueDate": cf.get('dueDate')} for cf in custom_fees],
+        },
+        "paidTerms": paid_terms, "paidCustomFees": paid_custom, "customFees": custom_fees,
     }
 
 # ==================== DASHBOARD STATS ====================

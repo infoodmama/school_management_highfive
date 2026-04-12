@@ -640,6 +640,9 @@ class SchoolManagementAPITester:
         # Test with non-existent payment ID (should return 404)
         self.run_test("Get Invoice (Non-existent)", "GET", "fees/invoice/nonexistent", 404)
         
+        # Test public invoice view endpoint (new feature)
+        self.run_test("Get Public Invoice View (Non-existent)", "GET", "fees/invoice-view/nonexistent", 404)
+        
         return True
 
     def test_event_update(self):
