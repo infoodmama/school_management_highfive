@@ -149,8 +149,8 @@ class SchoolManagementAPITester:
         return success
 
     def test_students_crud(self):
-        """Test Students CRUD operations"""
-        print("\n👥 Testing Students Management...")
+        """Test Students CRUD operations with studentCode"""
+        print("\n👥 Testing Students Management with studentCode...")
         
         # First create a class for the student
         class_data = {
@@ -165,10 +165,11 @@ class SchoolManagementAPITester:
         # Get initial students
         self.run_test("Get Students (Initial)", "GET", "students", 200)
         
-        # Create a new student
+        # Create a new student with studentCode (NEW REQUIREMENT)
         student_data = {
+            "studentCode": "ADM001",  # NEW: Unique student ID
             "studentName": "Test Student",
-            "rollNo": "TEST001",
+            "rollNo": "1",  # NEW: No longer unique, class-wise only
             "studentClass": "TestClass2",
             "section": "A",
             "fatherName": "Test Father",
@@ -179,10 +180,43 @@ class SchoolManagementAPITester:
             "feeTerm2": 5000.0,
             "feeTerm3": 5000.0
         }
-        success, created_student = self.run_test("Create Student", "POST", "students", 200, student_data)
+        success, created_student = self.run_test("Create Student with studentCode", "POST", "students", 201, student_data)
         
         if success and created_student:
             student_id = created_student.get('id')
+            print(f"   Created student with studentCode: {created_student.get('studentCode')}")
+            
+            # Test duplicate studentCode rejection (NEW REQUIREMENT)
+            duplicate_student_data = student_data.copy()
+            duplicate_student_data["studentName"] = "Duplicate Student"
+            duplicate_student_data["rollNo"] = "2"  # Different roll no, same studentCode
+            self.run_test("Reject Duplicate studentCode", "POST", "students", 400, duplicate_student_data)
+            
+            # Test same rollNo in different section (should be allowed now)
+            same_rollno_data = {
+                "studentCode": "ADM002",
+                "studentName": "Same Roll Student",
+                "rollNo": "1",  # Same roll no as first student
+                "studentClass": "TestClass2",
+                "section": "B",  # Different section
+                "fatherName": "Test Father 2",
+                "motherName": "Test Mother 2",
+                "mobile": "9876543211",
+                "address": "Test Address 2",
+                "feeTerm1": 5000.0,
+                "feeTerm2": 5000.0,
+                "feeTerm3": 5000.0
+            }
+            
+            # First create section B
+            class_update_data = {
+                "className": "TestClass2",
+                "sections": ["A", "B"]
+            }
+            class_id = created_class.get('id')
+            self.run_test("Update Class with Section B", "PUT", f"classes/{class_id}", 200, class_update_data)
+            
+            success2, created_student2 = self.run_test("Create Student with Same rollNo Different Section", "POST", "students", 201, same_rollno_data)
             
             # Get students after creation
             self.run_test("Get Students (After Create)", "GET", "students", 200)
@@ -197,8 +231,11 @@ class SchoolManagementAPITester:
             }
             self.run_test("Update Student", "PUT", f"students/{student_id}", 200, update_data)
             
-            # Delete the student
+            # Delete the students
             self.run_test("Delete Student", "DELETE", f"students/{student_id}", 200)
+            if success2 and created_student2:
+                student_id2 = created_student2.get('id')
+                self.run_test("Delete Student 2", "DELETE", f"students/{student_id2}", 200)
         
         # Clean up - delete the test class
         if created_class:
@@ -224,12 +261,34 @@ class SchoolManagementAPITester:
         return True
 
     def test_fees_operations(self):
-        """Test Fees operations"""
-        print("\n💳 Testing Fees Management...")
+        """Test Fees operations with studentCode"""
+        print("\n💳 Testing Fees Management with studentCode...")
         
         # Test day sheet
         today = datetime.now().strftime('%Y-%m-%d')
         self.run_test("Get Day Sheet", "GET", "fees/day-sheet", 200, params={"date": today})
+        
+        # Test getting student fees by studentCode (NEW REQUIREMENT)
+        success, response = self.run_test("Get Student Fees by studentCode ADM001", "GET", "fees/student/ADM001", 200)
+        if success:
+            student = response.get('student', {})
+            print(f"   Found student by studentCode: {student.get('studentName')} (Code: {student.get('studentCode')})")
+            
+            # Test fee payment with studentCode
+            if student.get('id'):
+                payment_data = {
+                    "studentId": student.get('id'),
+                    "studentCode": student.get('studentCode'),  # NEW: Using studentCode
+                    "rollNo": student.get('rollNo'),
+                    "studentName": student.get('studentName'),
+                    "termNumber": 1,
+                    "amount": 1000,
+                    "paymentMode": "cash"
+                }
+                
+                payment_success, payment_response = self.run_test("Create Fee Payment with studentCode", "POST", "fees/payment", 201, payment_data)
+                if payment_success:
+                    print(f"   Payment created with receipt: {payment_response.get('receiptNumber')}")
         
         # Test getting student fees (should return 404 for non-existent student)
         success, _ = self.run_test("Get Student Fees (Non-existent)", "GET", "fees/student/NONEXISTENT", 404)
@@ -462,8 +521,8 @@ class SchoolManagementAPITester:
         return success
 
     def test_inventory_issue(self):
-        """Test Inventory Issue operations"""
-        print("\n📤 Testing Inventory Issue to Students...")
+        """Test Inventory Issue operations with studentCode"""
+        print("\n📤 Testing Inventory Issue to Students with studentCode...")
         
         # First create a class and student for testing
         class_data = {
@@ -476,8 +535,9 @@ class SchoolManagementAPITester:
             return False
         
         student_data = {
+            "studentCode": "ADM003",  # NEW: Using studentCode
             "studentName": "Test Student Issue",
-            "rollNo": "ISSUE001",
+            "rollNo": "1",
             "studentClass": "TestClass5",
             "section": "A",
             "fatherName": "Test Father",
@@ -488,7 +548,7 @@ class SchoolManagementAPITester:
             "feeTerm2": 5000.0,
             "feeTerm3": 5000.0
         }
-        success, created_student = self.run_test("Create Student for Inventory Issue", "POST", "students", 200, student_data)
+        success, created_student = self.run_test("Create Student for Inventory Issue", "POST", "students", 201, student_data)
         
         if not success:
             return False
@@ -501,19 +561,22 @@ class SchoolManagementAPITester:
             "purchaseDate": "2024-01-15",
             "amount": 50.0
         }
-        success, created_item = self.run_test("Create Inventory Item for Issue", "POST", "inventory", 200, inventory_data)
+        success, created_item = self.run_test("Create Inventory Item for Issue", "POST", "inventory", 201, inventory_data)
         
         if success and created_item:
             item_id = created_item.get('id')
             
-            # Issue inventory to student
+            # Issue inventory to student using studentCode (NEW REQUIREMENT)
             issue_data = {
                 "itemId": item_id,
-                "rollNo": "ISSUE001",
+                "studentCode": "ADM003",  # NEW: Using studentCode instead of rollNo
                 "quantity": 2,
                 "date": "2024-01-20"
             }
-            success, issued = self.run_test("Issue Inventory to Student", "POST", "inventory/issue", 200, issue_data)
+            success, issued = self.run_test("Issue Inventory to Student by studentCode", "POST", "inventory/issue", 201, issue_data)
+            
+            if success:
+                print(f"   Inventory issued to student: {issued.get('studentName')} (Code: {issued.get('studentCode')})")
             
             # Get inventory issues
             self.run_test("Get Inventory Issues", "GET", "inventory/issues", 200)
@@ -814,6 +877,222 @@ class SchoolManagementAPITester:
         
         return success
 
+    def test_sample_csv_studentcode(self):
+        """Test Sample CSV has studentCode column"""
+        print("\n📄 Testing Sample CSV with studentCode...")
+        
+        try:
+            response = requests.get(f"{self.api_url}/students/sample-csv")
+            if response.status_code == 200:
+                csv_content = response.text
+                lines = csv_content.strip().split('\n')
+                if lines:
+                    headers = lines[0].split(',')
+                    has_student_id = 'Student ID' in headers
+                    print(f"   CSV headers: {headers}")
+                    print(f"   Has 'Student ID' column: {has_student_id}")
+                    
+                    if len(lines) > 1:
+                        sample_data = lines[1].split(',')
+                        print(f"   Sample data: {sample_data}")
+                        # Check if sample data has studentCode like ADM001
+                        if len(sample_data) > 0:
+                            sample_student_id = sample_data[0]
+                            print(f"   Sample Student ID: {sample_student_id}")
+                    
+                    self.tests_run += 1
+                    if has_student_id:
+                        self.tests_passed += 1
+                        print("✅ Sample CSV has Student ID column")
+                        return True
+                    else:
+                        print("❌ Sample CSV missing Student ID column")
+                        return False
+        except Exception as e:
+            print(f"❌ Failed to test CSV: {str(e)}")
+            self.tests_run += 1
+            return False
+
+    def test_homework_file_upload(self):
+        """Test Homework with file upload support"""
+        print("\n📚 Testing Homework with File Upload...")
+        
+        # First create a class for homework
+        class_data = {
+            "className": "TestClassHWFile",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Homework File", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        # Create homework with attachment fields (NEW REQUIREMENT)
+        homework_data = {
+            "studentClass": "TestClassHWFile",
+            "section": "A",
+            "subject": "Mathematics",
+            "title": "Test Homework with File",
+            "description": "This homework has an attachment",
+            "dueDate": "2024-02-20",
+            "assignedBy": "Test Teacher",
+            "attachmentUrl": "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsO8CjIgMCBvYmoKPDwKL0xlbmd0aCAzIDAgUgo+PgpzdHJlYW0KQNC=",  # Sample PDF base64
+            "attachmentName": "homework.pdf"
+        }
+        success, created_homework = self.run_test("Create Homework with File Attachment", "POST", "homework", 201, homework_data)
+        
+        if success and created_homework:
+            homework_id = created_homework.get('id')
+            print(f"   Homework created with attachment: {created_homework.get('attachmentName')}")
+            
+            # Verify attachment fields are saved
+            if created_homework.get('attachmentUrl') and created_homework.get('attachmentName'):
+                print("   ✅ Homework attachment fields saved correctly")
+            
+            # Clean up - delete the homework
+            self.run_test("Delete Homework with File", "DELETE", f"homework/{homework_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Class for Homework File", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
+    def test_event_file_upload(self):
+        """Test Event with file upload support"""
+        print("\n📅 Testing Event with File Upload...")
+        
+        # Create event with attachment fields (NEW REQUIREMENT)
+        event_data = {
+            "title": "Test Event with File",
+            "description": "This event has an attachment",
+            "date": "2024-02-15",
+            "sendNotification": False,
+            "attachmentUrl": "data:application/pdf;base64,JVBERi0xLjQKJcOkw7zDtsO8CjIgMCBvYmoKPDwKL0xlbmd0aCAzIDAgUgo+PgpzdHJlYW0KQNC=",  # Sample PDF base64
+            "attachmentName": "event.pdf"
+        }
+        success, created_event = self.run_test("Create Event with File Attachment", "POST", "events", 201, event_data)
+        
+        if success and created_event:
+            event_id = created_event.get('id')
+            print(f"   Event created with attachment: {created_event.get('attachmentName')}")
+            
+            # Verify attachment fields are saved
+            if created_event.get('attachmentUrl') and created_event.get('attachmentName'):
+                print("   ✅ Event attachment fields saved correctly")
+            
+            # Clean up - delete the event
+            self.run_test("Delete Event with File", "DELETE", f"events/{event_id}", 200)
+        
+        return success
+
+    def test_parent_portal_homework_filter(self):
+        """Test Parent Portal shows last 7 days homework only"""
+        print("\n👨‍👩‍👧‍👦 Testing Parent Portal Homework Filter (Last 7 Days)...")
+        
+        # First create a class and student with parent credentials
+        class_data = {
+            "className": "TestClassParentHW",
+            "sections": ["A"]
+        }
+        success, created_class = self.run_test("Create Class for Parent Homework", "POST", "classes", 200, class_data)
+        
+        if not success:
+            return False
+        
+        student_data = {
+            "studentCode": "ADM004",
+            "studentName": "Test Student Parent HW",
+            "rollNo": "1",
+            "studentClass": "TestClassParentHW",
+            "section": "A",
+            "fatherName": "Test Father",
+            "motherName": "Test Mother",
+            "mobile": "9876543210",
+            "address": "Test Address",
+            "feeTerm1": 5000.0,
+            "feeTerm2": 5000.0,
+            "feeTerm3": 5000.0,
+            "parentUsername": "parent004",
+            "parentPassword": "parentpass123"
+        }
+        success, created_student = self.run_test("Create Student for Parent Homework", "POST", "students", 201, student_data)
+        
+        if success and created_student:
+            student_id = created_student.get('id')
+            
+            # Create recent homework (within 7 days)
+            from datetime import datetime, timedelta
+            recent_date = (datetime.now() + timedelta(days=2)).strftime('%Y-%m-%d')
+            old_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
+            
+            recent_homework_data = {
+                "studentClass": "TestClassParentHW",
+                "section": "A",
+                "subject": "Mathematics",
+                "title": "Recent Homework",
+                "description": "This is recent homework",
+                "dueDate": recent_date,
+                "assignedBy": "Test Teacher"
+            }
+            hw_success, recent_hw = self.run_test("Create Recent Homework", "POST", "homework", 201, recent_homework_data)
+            
+            # Create old homework (older than 7 days)
+            old_homework_data = {
+                "studentClass": "TestClassParentHW",
+                "section": "A",
+                "subject": "Science",
+                "title": "Old Homework",
+                "description": "This is old homework",
+                "dueDate": old_date,
+                "assignedBy": "Test Teacher"
+            }
+            old_hw_success, old_hw = self.run_test("Create Old Homework", "POST", "homework", 201, old_homework_data)
+            
+            # Test parent login
+            parent_success, parent_response = self.run_test("Parent Login for Homework Filter", "POST", "auth/parent-login", 200, {"username": "parent004", "password": "parentpass123"})
+            
+            if parent_success:
+                # Test parent dashboard (should show only last 7 days homework)
+                dashboard_success, dashboard_response = self.run_test("Get Parent Dashboard with Homework Filter", "GET", f"parent/dashboard/{student_id}", 200)
+                
+                if dashboard_success:
+                    homework = dashboard_response.get('homework', [])
+                    print(f"   Homework count in parent portal: {len(homework)}")
+                    
+                    # Check homework titles to verify filtering
+                    homework_titles = [hw.get('title') for hw in homework]
+                    print(f"   Homework titles: {homework_titles}")
+                    
+                    # Should contain recent homework but not old homework
+                    has_recent = any('Recent' in title for title in homework_titles)
+                    has_old = any('Old' in title for title in homework_titles)
+                    
+                    print(f"   Has recent homework: {has_recent}")
+                    print(f"   Has old homework: {has_old}")
+                    
+                    if has_recent and not has_old:
+                        print("   ✅ Parent portal correctly shows only last 7 days homework")
+                    else:
+                        print("   ⚠️ Parent portal homework filtering may not be working correctly")
+            
+            # Clean up homework
+            if hw_success and recent_hw:
+                self.run_test("Delete Recent Homework", "DELETE", f"homework/{recent_hw.get('id')}", 200)
+            if old_hw_success and old_hw:
+                self.run_test("Delete Old Homework", "DELETE", f"homework/{old_hw.get('id')}", 200)
+            
+            # Clean up - delete the student
+            self.run_test("Delete Student for Parent Homework", "DELETE", f"students/{student_id}", 200)
+        
+        # Clean up - delete the test class
+        if created_class:
+            class_id = created_class.get('id')
+            self.run_test("Delete Class for Parent Homework", "DELETE", f"classes/{class_id}", 200)
+        
+        return success
+
     def run_all_tests(self):
         """Run all API tests"""
         print("🚀 Starting School Management System API Tests...")
@@ -847,6 +1126,10 @@ class SchoolManagementAPITester:
         # Test NEW features added in current iteration
         self.test_fee_status_endpoints()
         self.test_event_with_notification()
+        self.test_sample_csv_studentcode()
+        self.test_homework_file_upload()
+        self.test_event_file_upload()
+        self.test_parent_portal_homework_filter()
         
         # Print summary
         print(f"\n📊 Test Summary:")

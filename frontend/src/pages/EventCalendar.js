@@ -11,7 +11,7 @@ const EventCalendar = () => {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false });
+  const [form, setForm] = useState({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false, attachmentUrl: '', attachmentName: '' });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const loadEvents = useCallback(async () => {
@@ -28,7 +28,7 @@ const EventCalendar = () => {
       await api.createEvent(form);
       toast.success('Event added');
       setShowDialog(false);
-      setForm({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false });
+      setForm({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false, attachmentUrl: '', attachmentName: '' });
       loadEvents();
     } catch (error) { toast.error('Failed to add event'); }
   };
@@ -80,6 +80,15 @@ const EventCalendar = () => {
                 <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                   <input type="checkbox" id="sendNotif" checked={form.sendNotification} onChange={(e) => setForm({ ...form, sendNotification: e.target.checked })} className="w-5 h-5 rounded accent-amber-500" />
                   <label htmlFor="sendNotif" className="font-bold text-amber-800 cursor-pointer">Send WhatsApp notification to all parents</label>
+                </div>
+                <div>
+                  <Label>Attachment (Optional - PDF/Image)</Label>
+                  <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+                    const file = e.target.files[0]; if (!file) return;
+                    try { const r = await api.uploadFile(file); setForm({ ...form, attachmentUrl: r.data.url, attachmentName: file.name }); toast.success('File uploaded'); }
+                    catch (err) { toast.error('Upload failed'); }
+                  }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200" />
+                  {form.attachmentName && <p className="text-sm text-emerald-600 font-medium mt-1">Attached: {form.attachmentName}</p>}
                 </div>
                 <div className="flex justify-end gap-3 pt-4">
                   <Button type="button" variant="outline" onClick={() => setShowDialog(false)} className="rounded-xl">Cancel</Button>

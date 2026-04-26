@@ -18,7 +18,7 @@ const Inventory = () => {
   const [showIssueDialog, setShowIssueDialog] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
   const [form, setForm] = useState({ itemName: '', quantity: '', category: '', purchaseDate: new Date().toISOString().split('T')[0], amount: '' });
-  const [issueForm, setIssueForm] = useState({ itemId: '', rollNo: '', quantity: '', date: new Date().toISOString().split('T')[0] });
+  const [issueForm, setIssueForm] = useState({ itemId: '', studentCode: '', quantity: '', date: new Date().toISOString().split('T')[0] });
 
   const loadItems = useCallback(async () => {
     try { const r = await api.getInventory(); setItems(r.data); } catch (e) { toast.error('Failed to load'); }
@@ -49,7 +49,7 @@ const Inventory = () => {
       await api.issueInventory({ ...issueForm, quantity: parseInt(issueForm.quantity) });
       toast.success('Inventory issued to student. Stock deducted.');
       setShowIssueDialog(false);
-      setIssueForm({ itemId: '', rollNo: '', quantity: '', date: new Date().toISOString().split('T')[0] });
+      setIssueForm({ itemId: '', studentCode: '', quantity: '', date: new Date().toISOString().split('T')[0] });
       loadItems(); loadIssues();
     } catch (error) { toast.error(error.response?.data?.detail || 'Failed to issue'); }
   };
@@ -88,7 +88,7 @@ const Inventory = () => {
                     <SelectContent>{items.map((i) => <SelectItem key={i.id} value={i.id}>{i.itemName} (Stock: {i.quantity})</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
-                <div><Label>Student Roll No *</Label><Input required value={issueForm.rollNo} onChange={(e) => setIssueForm({ ...issueForm, rollNo: e.target.value })} className="rounded-xl h-12" placeholder="Enter roll number" /></div>
+                <div><Label>Student ID *</Label><Input required value={issueForm.studentCode} onChange={(e) => setIssueForm({ ...issueForm, studentCode: e.target.value })} className="rounded-xl h-12" placeholder="Enter Student ID (e.g., ADM001)" /></div>
                 <div><Label>Quantity *</Label><Input type="number" required min="1" value={issueForm.quantity} onChange={(e) => setIssueForm({ ...issueForm, quantity: e.target.value })} className="rounded-xl h-12" /></div>
                 <div><Label>Date *</Label><Input type="date" required value={issueForm.date} onChange={(e) => setIssueForm({ ...issueForm, date: e.target.value })} className="rounded-xl h-12" /></div>
                 <div className="flex justify-end gap-3 pt-4">

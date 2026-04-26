@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 const Fees = () => {
   const [activeTab, setActiveTab] = useState('payment');
   const [classes, setClasses] = useState([]);
-  const [rollNo, setRollNo] = useState('');
+  const [studentCode, setStudentCode] = useState('');
   const [studentData, setStudentData] = useState(null);
   const [selectedFee, setSelectedFee] = useState(null);
   const [customPayAmount, setCustomPayAmount] = useState('');
@@ -48,9 +48,9 @@ const Fees = () => {
   const getSections = (cls) => { const f = classes.find((c) => c.className === cls); return f ? f.sections : []; };
 
   const handleSearchStudent = async () => {
-    if (!rollNo) { toast.error('Please enter roll number'); return; }
+    if (!studentCode) { toast.error('Please enter Student ID'); return; }
     try {
-      const response = await api.getStudentFees(rollNo);
+      const response = await api.getStudentFees(studentCode);
       setStudentData(response.data);
       setSelectedFee(null);
     } catch (error) { toast.error('Student not found'); setStudentData(null); }
@@ -71,6 +71,7 @@ const Fees = () => {
     try {
       const payload = {
         studentId: studentData.student.id,
+        studentCode: studentData.student.studentCode,
         rollNo: studentData.student.rollNo,
         studentName: studentData.student.studentName,
         amount: payAmount,
@@ -167,7 +168,7 @@ const Fees = () => {
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
             <h2 className="text-xl font-bold text-slate-800 mb-4">Search Student</h2>
             <div className="flex gap-4">
-              <div className="flex-1"><Label>Roll Number *</Label><Input data-testid="fee-rollno-input" value={rollNo} onChange={(e) => setRollNo(e.target.value)} className="rounded-xl h-12" placeholder="Enter roll number" /></div>
+              <div className="flex-1"><Label>Student ID *</Label><Input data-testid="fee-studentcode-input" value={studentCode} onChange={(e) => setStudentCode(e.target.value)} className="rounded-xl h-12" placeholder="Enter Student ID (e.g., ADM001)" /></div>
               <div className="flex items-end"><Button data-testid="search-student-btn" onClick={handleSearchStudent} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl h-12 active:scale-95 transition-transform"><Search className="w-5 h-5 mr-2" />Search</Button></div>
             </div>
           </div>

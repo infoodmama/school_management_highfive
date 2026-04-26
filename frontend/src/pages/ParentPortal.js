@@ -296,7 +296,9 @@ const ParentPortal = () => {
                     <p className="text-[10px] font-bold">{new Date(ev.date+'T00:00:00').toLocaleDateString('en-IN',{month:'short'})}</p>
                     <p className="text-lg sm:text-xl font-extrabold leading-none">{new Date(ev.date+'T00:00:00').getDate()}</p>
                   </div>
-                  <div><h3 className="font-bold text-slate-900">{ev.title}</h3><p className="text-sm text-slate-600 mt-1">{ev.description}</p></div>
+                  <div><h3 className="font-bold text-slate-900">{ev.title}</h3><p className="text-sm text-slate-600 mt-1">{ev.description}</p>
+                  {ev.attachmentUrl && <a href={ev.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 px-2 py-1 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold text-xs transition-colors">{ev.attachmentName?.endsWith('.pdf') ? 'View PDF' : 'View Attachment'}</a>}
+                  </div>
                 </div>
               ))}
               {dashData.events.length === 0 && <p className="text-slate-400 text-center py-8 text-sm">No events</p>}
@@ -316,9 +318,10 @@ const ParentPortal = () => {
                 </div>
                 <h3 className="text-base font-bold text-slate-900">{hw.title}</h3>
                 <p className="text-sm text-slate-600 mt-1">{hw.description}</p>
-                <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
+                <div className="flex items-center gap-4 mt-3 text-xs text-slate-500 flex-wrap">
                   <span className={`font-bold ${hw.dueDate < new Date().toISOString().split('T')[0] ? 'text-rose-600' : 'text-slate-600'}`}>Due: {hw.dueDate}</span>
                   <span>By: {hw.assignedBy}</span>
+                  {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-1 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold transition-colors">{hw.attachmentName?.endsWith('.pdf') ? 'PDF' : 'View File'}</a>}
                 </div>
               </div>
             ))}

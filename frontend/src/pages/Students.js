@@ -21,7 +21,7 @@ const Students = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [filters, setFilters] = useState({ studentClass: '', section: '', search: '' });
   const [formData, setFormData] = useState({
-    studentName: '', rollNo: '', studentClass: '', section: '',
+    studentCode: '', studentName: '', rollNo: '', studentClass: '', section: '',
     fatherName: '', motherName: '', mobile: '', address: '',
     feeTerm1: '', feeTerm2: '', feeTerm3: '', parentUsername: '', parentPassword: '',
   });
@@ -118,13 +118,13 @@ const Students = () => {
   };
 
   const resetForm = () => {
-    setFormData({ studentName: '', rollNo: '', studentClass: '', section: '', fatherName: '', motherName: '', mobile: '', address: '', feeTerm1: '', feeTerm2: '', feeTerm3: '', parentUsername: '', parentPassword: '' });
+    setFormData({ studentCode: '', studentName: '', rollNo: '', studentClass: '', section: '', fatherName: '', motherName: '', mobile: '', address: '', feeTerm1: '', feeTerm2: '', feeTerm3: '', parentUsername: '', parentPassword: '' });
   };
 
   const openEditDialog = (student) => {
     setSelectedStudent(student);
     setFormData({
-      studentName: student.studentName, rollNo: student.rollNo,
+      studentCode: student.studentCode || '', studentName: student.studentName, rollNo: student.rollNo,
       studentClass: student.studentClass, section: student.section,
       fatherName: student.fatherName, motherName: student.motherName,
       mobile: student.mobile, address: student.address,
@@ -137,8 +137,9 @@ const Students = () => {
   // Inline form fields rendered directly (NOT as a sub-component to avoid focus loss)
   const renderFormFields = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div><Label>Student ID * (Unique)</Label><Input data-testid="student-code-input" required value={formData.studentCode} onChange={(e) => updateField('studentCode', e.target.value)} className="rounded-xl h-12" placeholder="e.g., ADM001" /></div>
       <div><Label>Student Name *</Label><Input data-testid="student-name-input" required value={formData.studentName} onChange={(e) => updateField('studentName', e.target.value)} className="rounded-xl h-12" /></div>
-      <div><Label>Roll No *</Label><Input data-testid="student-rollno-input" required value={formData.rollNo} onChange={(e) => updateField('rollNo', e.target.value)} className="rounded-xl h-12" /></div>
+      <div><Label>Roll No *</Label><Input data-testid="student-rollno-input" required value={formData.rollNo} onChange={(e) => updateField('rollNo', e.target.value)} className="rounded-xl h-12" placeholder="Class roll number" /></div>
       <div>
         <Label>Class *</Label>
         <Select value={formData.studentClass} onValueChange={(v) => setFormData(prev => ({ ...prev, studentClass: v, section: '' }))}>
@@ -261,6 +262,7 @@ const Students = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50">
+                  <TableHead className="font-bold uppercase text-xs text-slate-600">Student ID</TableHead>
                   <TableHead className="font-bold uppercase text-xs text-slate-600">Roll No</TableHead>
                   <TableHead className="font-bold uppercase text-xs text-slate-600">Name</TableHead>
                   <TableHead className="font-bold uppercase text-xs text-slate-600">Class</TableHead>
@@ -272,7 +274,8 @@ const Students = () => {
               <TableBody>
                 {students.map((student) => (
                   <TableRow key={student.id} className="hover:bg-slate-50/80" data-testid={`student-row-${student.rollNo}`}>
-                    <TableCell className="font-semibold text-slate-900">{student.rollNo}</TableCell>
+                    <TableCell className="font-semibold text-slate-900">{student.studentCode}</TableCell>
+                    <TableCell className="text-slate-700">{student.rollNo}</TableCell>
                     <TableCell className="font-medium text-slate-700">{student.studentName}</TableCell>
                     <TableCell><span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-sky-100 text-sky-700">{student.studentClass}</span></TableCell>
                     <TableCell><span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700">{student.section}</span></TableCell>

@@ -73,8 +73,9 @@ class DatabaseSettings(BaseModel):
 class Student(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    studentCode: str  # Unique admission/student ID (e.g., ADM001)
     studentName: str
-    rollNo: str
+    rollNo: str  # Class-wise roll number (not unique)
     studentClass: str
     section: str
     fatherName: str
@@ -89,6 +90,7 @@ class Student(BaseModel):
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class StudentCreate(BaseModel):
+    studentCode: str
     studentName: str
     rollNo: str
     studentClass: str
@@ -104,6 +106,7 @@ class StudentCreate(BaseModel):
     parentPassword: Optional[str] = None
 
 class StudentUpdate(BaseModel):
+    studentCode: Optional[str] = None
     studentName: Optional[str] = None
     rollNo: Optional[str] = None
     studentClass: Optional[str] = None
@@ -140,6 +143,7 @@ class FeePayment(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     studentId: str
+    studentCode: str
     rollNo: str
     studentName: str
     termNumber: Optional[int] = None
@@ -153,6 +157,7 @@ class FeePayment(BaseModel):
 
 class FeePaymentCreate(BaseModel):
     studentId: str
+    studentCode: str
     rollNo: str
     studentName: str
     termNumber: Optional[int] = None
@@ -208,6 +213,7 @@ class InventoryIssue(BaseModel):
     itemId: str
     itemName: str
     studentId: str
+    studentCode: str
     rollNo: str
     studentName: str
     quantity: int
@@ -216,7 +222,7 @@ class InventoryIssue(BaseModel):
 
 class InventoryIssueCreate(BaseModel):
     itemId: str
-    rollNo: str
+    studentCode: str
     quantity: int
     date: str
 
@@ -227,6 +233,8 @@ class Event(BaseModel):
     description: str
     date: str
     sendNotification: Optional[bool] = False
+    attachmentUrl: Optional[str] = None
+    attachmentName: Optional[str] = None
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class EventCreate(BaseModel):
@@ -234,6 +242,8 @@ class EventCreate(BaseModel):
     description: str
     date: str
     sendNotification: Optional[bool] = False
+    attachmentUrl: Optional[str] = None
+    attachmentName: Optional[str] = None
 
 class Homework(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -245,6 +255,8 @@ class Homework(BaseModel):
     description: str
     dueDate: str
     assignedBy: str
+    attachmentUrl: Optional[str] = None
+    attachmentName: Optional[str] = None
     createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class HomeworkCreate(BaseModel):
@@ -255,6 +267,8 @@ class HomeworkCreate(BaseModel):
     description: str
     dueDate: str
     assignedBy: str
+    attachmentUrl: Optional[str] = None
+    attachmentName: Optional[str] = None
 
 class Staff(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -393,6 +407,7 @@ def generate_invoice_pdf(payment_data, student_data):
         ["Receipt No:", payment_data.get('receiptNumber', '')],
         ["Date:", payment_data.get('paymentDate', '')[:10] if isinstance(payment_data.get('paymentDate'), str) else datetime.now().strftime('%Y-%m-%d')],
         ["Student Name:", student_data.get('studentName', '')],
+        ["Student ID:", student_data.get('studentCode', '')],
         ["Roll No:", student_data.get('rollNo', '')],
         ["Class:", f"{student_data.get('studentClass', '')} - {student_data.get('section', '')}"],
         ["Father Name:", student_data.get('fatherName', '')],
@@ -559,9 +574,9 @@ async def update_database_settings(data: DatabaseSettings):
 
 @api_router.post("/students", response_model=Student)
 async def create_student(student: StudentCreate):
-    existing = await db.students.find_one({"rollNo": student.rollNo}, {"_id": 0})
+    existing = await db.students.find_one({"studentCode": student.studentCode}, {"_id": 0})
     if existing:
-        raise HTTPException(status_code=400, detail="Roll number already exists")
+        raise HTTPException(status_code=400, detail="Student ID already exists")
     student_obj = Student(**student.model_dump())
     doc = student_obj.model_dump()
     doc['createdAt'] = doc['createdAt'].isoformat()
@@ -578,6 +593,7 @@ async def bulk_upload_students(file: UploadFile = File(...)):
         for row in csv_reader:
             try:
                 student_data = StudentCreate(
+                    studentCode=row['Student ID'].strip(),
                     studentName=row['Student Name'].strip(), rollNo=row['Roll No'].strip(),
                     studentClass=row['Class'].strip(), section=row['Section'].strip(),
                     fatherName=row['Father Name'].strip(), motherName=row['Mother Name'].strip(),
@@ -586,9 +602,9 @@ async def bulk_upload_students(file: UploadFile = File(...)):
                     parentUsername=row.get('Parent Username', '').strip() or None,
                     parentPassword=row.get('Parent Password', '').strip() or None,
                 )
-                existing = await db.students.find_one({"rollNo": student_data.rollNo}, {"_id": 0})
+                existing = await db.students.find_one({"studentCode": student_data.studentCode}, {"_id": 0})
                 if existing:
-                    errors.append(f"Roll {student_data.rollNo} exists")
+                    errors.append(f"Student ID {student_data.studentCode} exists")
                     continue
                 student_obj = Student(**student_data.model_dump())
                 doc = student_obj.model_dump()
@@ -605,9 +621,9 @@ async def bulk_upload_students(file: UploadFile = File(...)):
 async def download_sample_csv():
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Student Name', 'Roll No', 'Class', 'Section', 'Father Name', 'Mother Name', 'Mobile Number', 'Address', 'Fee Term1', 'Fee Term2', 'Fee Term3', 'Parent Username', 'Parent Password'])
-    writer.writerow(['John Doe', '101', '1', 'A', 'Robert Doe', 'Jane Doe', '9876543210', '123 Main St', '5000', '5000', '5000', 'parent101', 'pass101'])
-    writer.writerow(['Alice Smith', '102', '1', 'A', 'Michael Smith', 'Sarah Smith', '9876543211', '456 Oak Ave', '5000', '5000', '5000', 'parent102', 'pass102'])
+    writer.writerow(['Student ID', 'Student Name', 'Roll No', 'Class', 'Section', 'Father Name', 'Mother Name', 'Mobile Number', 'Address', 'Fee Term1', 'Fee Term2', 'Fee Term3', 'Parent Username', 'Parent Password'])
+    writer.writerow(['ADM001', 'John Doe', '1', '1', 'A', 'Robert Doe', 'Jane Doe', '9876543210', '123 Main St', '5000', '5000', '5000', 'parent101', 'pass101'])
+    writer.writerow(['ADM002', 'Alice Smith', '2', '1', 'A', 'Michael Smith', 'Sarah Smith', '9876543211', '456 Oak Ave', '5000', '5000', '5000', 'parent102', 'pass102'])
     output.seek(0)
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=sample_students.csv"})
 
@@ -616,7 +632,7 @@ async def get_students(studentClass: Optional[str] = None, section: Optional[str
     query = {}
     if studentClass: query['studentClass'] = studentClass
     if section: query['section'] = section
-    if search: query['$or'] = [{'studentName': {'$regex': search, '$options': 'i'}}, {'rollNo': {'$regex': search, '$options': 'i'}}]
+    if search: query['$or'] = [{'studentName': {'$regex': search, '$options': 'i'}}, {'rollNo': {'$regex': search, '$options': 'i'}}, {'studentCode': {'$regex': search, '$options': 'i'}}]
     students = await db.students.find(query, {"_id": 0}).to_list(1000)
     for s in students:
         if isinstance(s.get('createdAt'), str): s['createdAt'] = datetime.fromisoformat(s['createdAt'])
@@ -659,11 +675,12 @@ async def mark_attendance(data: AttendanceSubmit):
     return {"message": f"Attendance marked for {len(records)} students"}
 
 @api_router.get("/attendance")
-async def get_attendance(studentClass: Optional[str] = None, section: Optional[str] = None, startDate: Optional[str] = None, endDate: Optional[str] = None):
+async def get_attendance(studentClass: Optional[str] = None, section: Optional[str] = None, startDate: Optional[str] = None, endDate: Optional[str] = None, date: Optional[str] = None):
     query = {}
     if studentClass: query['studentClass'] = studentClass
     if section: query['section'] = section
-    if startDate and endDate: query['date'] = {'$gte': startDate, '$lte': endDate}
+    if date: query['date'] = date
+    elif startDate and endDate: query['date'] = {'$gte': startDate, '$lte': endDate}
     elif startDate: query['date'] = startDate
     return await db.attendance.find(query, {"_id": 0}).to_list(10000)
 
@@ -790,11 +807,11 @@ async def export_fee_status(studentClass: str, section: str, format: str = 'csv'
 
 # ==================== FEE ROUTES ====================
 
-@api_router.get("/fees/student/{roll_no}")
-async def get_student_fees(roll_no: str):
-    student = await db.students.find_one({"rollNo": roll_no}, {"_id": 0})
+@api_router.get("/fees/student/{student_code}")
+async def get_student_fees(student_code: str):
+    student = await db.students.find_one({"studentCode": student_code}, {"_id": 0})
     if not student: raise HTTPException(status_code=404, detail="Student not found")
-    payments = await db.fee_payments.find({"rollNo": roll_no}, {"_id": 0}).to_list(100)
+    payments = await db.fee_payments.find({"studentCode": student_code}, {"_id": 0}).to_list(100)
     paid_terms, paid_custom = {}, {}
     for p in payments:
         if p.get('termNumber'):
@@ -819,7 +836,7 @@ async def create_fee_payment(payment: FeePaymentCreate):
     doc['paymentDate'] = doc['paymentDate'].isoformat()
     await db.fee_payments.insert_one(doc)
     settings_doc = await get_wa_settings()
-    student = await db.students.find_one({"rollNo": payment.rollNo}, {"_id": 0})
+    student = await db.students.find_one({"studentCode": payment.studentCode}, {"_id": 0})
     if student and settings_doc:
         fee_label = f"Term {payment.termNumber}" if payment.termNumber else (payment.feeName or 'Custom Fee')
         # Build public invoice URL for WhatsApp document (view endpoint, no download header)
@@ -832,8 +849,8 @@ async def create_fee_payment(payment: FeePaymentCreate):
 async def download_invoice(payment_id: str):
     payment = await db.fee_payments.find_one({"id": payment_id}, {"_id": 0})
     if not payment: raise HTTPException(status_code=404, detail="Payment not found")
-    student = await db.students.find_one({"rollNo": payment['rollNo']}, {"_id": 0})
-    if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
+    student = await db.students.find_one({"studentCode": payment.get('studentCode', payment.get('rollNo', ''))}, {"_id": 0})
+    if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentCode": payment.get('studentCode', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
     buf = generate_invoice_pdf(payment, student)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=invoice_{payment['receiptNumber']}.pdf"})
 
@@ -842,8 +859,8 @@ async def view_invoice(payment_id: str):
     """Public PDF view endpoint (no attachment header) - for WhatsApp document link"""
     payment = await db.fee_payments.find_one({"id": payment_id}, {"_id": 0})
     if not payment: raise HTTPException(status_code=404, detail="Payment not found")
-    student = await db.students.find_one({"rollNo": payment['rollNo']}, {"_id": 0})
-    if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
+    student = await db.students.find_one({"studentCode": payment.get('studentCode', payment.get('rollNo', ''))}, {"_id": 0})
+    if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentCode": payment.get('studentCode', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
     buf = generate_invoice_pdf(payment, student)
     return StreamingResponse(buf, media_type="application/pdf")
 
@@ -978,12 +995,12 @@ async def issue_inventory(data: InventoryIssueCreate):
     item = await db.inventory.find_one({"id": data.itemId}, {"_id": 0})
     if not item: raise HTTPException(status_code=404, detail="Item not found")
     if item['quantity'] < data.quantity: raise HTTPException(status_code=400, detail=f"Insufficient stock. Available: {item['quantity']}")
-    student = await db.students.find_one({"rollNo": data.rollNo}, {"_id": 0})
+    student = await db.students.find_one({"studentCode": data.studentCode}, {"_id": 0})
     if not student: raise HTTPException(status_code=404, detail="Student not found")
     # Deduct stock
     await db.inventory.update_one({"id": data.itemId}, {"$inc": {"quantity": -data.quantity}})
     issue = InventoryIssue(itemId=data.itemId, itemName=item['itemName'], studentId=student['id'],
-                           rollNo=data.rollNo, studentName=student['studentName'], quantity=data.quantity, date=data.date)
+                           studentCode=data.studentCode, rollNo=student.get('rollNo', ''), studentName=student['studentName'], quantity=data.quantity, date=data.date)
     doc = issue.model_dump()
     doc['createdAt'] = doc['createdAt'].isoformat()
     await db.inventory_issues.insert_one(doc)
@@ -1136,7 +1153,11 @@ async def parent_dashboard(student_id: str):
     absent_days = sum(1 for a in attendance if a['status'] == 'absent')
     payments = await db.fee_payments.find({"studentId": student_id}, {"_id": 0}).to_list(100)
     events = await db.events.find({}, {"_id": 0}).to_list(100)
-    homework = await db.homework.find({"studentClass": student.get('studentClass', ''), "section": student.get('section', '')}, {"_id": 0}).to_list(100)
+    homework_cutoff = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+    homework = await db.homework.find({"studentClass": student.get('studentClass', ''), "section": student.get('section', ''), "createdAt": {"$gte": homework_cutoff}}, {"_id": 0}).to_list(100)
+    # Fallback: if createdAt is stored as ISO string, also get by dueDate
+    if not homework:
+        homework = await db.homework.find({"studentClass": student.get('studentClass', ''), "section": student.get('section', ''), "dueDate": {"$gte": homework_cutoff}}, {"_id": 0}).to_list(100)
     # Fee structure
     custom_fees = await db.fee_types.find({
         "$or": [

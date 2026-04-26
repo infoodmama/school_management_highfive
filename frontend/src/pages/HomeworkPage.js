@@ -14,7 +14,7 @@ const HomeworkPage = () => {
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [filters, setFilters] = useState({ studentClass: '', section: '' });
-  const [form, setForm] = useState({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: '' });
+  const [form, setForm] = useState({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: '', attachmentUrl: '', attachmentName: '' });
 
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
@@ -42,7 +42,7 @@ const HomeworkPage = () => {
       await api.createHomework(form);
       toast.success('Homework assigned');
       setShowDialog(false);
-      setForm({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: '' });
+      setForm({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: '', attachmentUrl: '', attachmentName: '' });
       loadHomework();
     } catch (error) { toast.error('Failed to assign homework'); }
   };
@@ -95,6 +95,15 @@ const HomeworkPage = () => {
                 <div><Label>Due Date *</Label><Input type="date" required value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="rounded-xl h-12" /></div>
                 <div><Label>Assigned By *</Label><Input required value={form.assignedBy} onChange={(e) => setForm({ ...form, assignedBy: e.target.value })} className="rounded-xl h-12" placeholder="Teacher name" /></div>
               </div>
+              <div>
+                <Label>Attachment (Optional - PDF/Image)</Label>
+                <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+                  const file = e.target.files[0]; if (!file) return;
+                  try { const r = await api.uploadFile(file); setForm({ ...form, attachmentUrl: r.data.url, attachmentName: file.name }); toast.success('File uploaded'); }
+                  catch (err) { toast.error('Upload failed'); }
+                }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200" />
+                {form.attachmentName && <p className="text-sm text-emerald-600 font-medium mt-1">Attached: {form.attachmentName}</p>}
+              </div>
               <div className="flex justify-end gap-3 pt-4">
                 <Button type="button" variant="outline" onClick={() => setShowDialog(false)} className="rounded-xl">Cancel</Button>
                 <Button data-testid="submit-homework-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">Assign</Button>
@@ -145,6 +154,7 @@ const HomeworkPage = () => {
                   <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
                     <span className={`font-bold ${isOverdue(hw.dueDate) ? 'text-rose-600' : 'text-slate-600'}`}>Due: {hw.dueDate}</span>
                     <span>By: {hw.assignedBy}</span>
+                    {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold transition-colors">{hw.attachmentName?.endsWith('.pdf') ? 'PDF' : 'File'}</a>}
                   </div>
                 </div>
                 <button onClick={() => handleDelete(hw.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors ml-2"><Trash2 className="w-4 h-4 text-rose-600" /></button>

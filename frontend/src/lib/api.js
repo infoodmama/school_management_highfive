@@ -36,7 +36,7 @@ export const api = {
   sendAttendanceAlerts: (data) => axios.post(`${API}/attendance/send-alerts`, data),
 
   // Fees
-  getStudentFees: (rollNo) => axios.get(`${API}/fees/student/${rollNo}`),
+  getStudentFees: (studentCode) => axios.get(`${API}/fees/student/${studentCode}`),
   createFeePayment: (data) => axios.post(`${API}/fees/payment`, data),
   getDaySheet: (date) => axios.get(`${API}/fees/day-sheet`, { params: { date } }),
   exportFees: (params) => axios.get(`${API}/fees/export`, { params, responseType: 'blob' }),
