@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, DollarSign, Download, Receipt, Plus, Edit, Trash2, Eye } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -11,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 
 const Fees = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('payment');
   const [classes, setClasses] = useState([]);
   const [studentCode, setStudentCode] = useState('');
@@ -77,6 +79,7 @@ const Fees = () => {
         amount: payAmount,
         paymentMode,
         upiScreenshot: paymentMode === 'upi' ? upiScreenshot : null,
+        collectedBy: user?.name || user?.username || 'Admin',
       };
       if (selectedFee.type === 'term') { payload.termNumber = selectedFee.number; }
       else { payload.feeTypeId = selectedFee.id; payload.feeName = selectedFee.label; }

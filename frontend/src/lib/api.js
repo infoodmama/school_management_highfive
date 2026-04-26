@@ -51,6 +51,8 @@ export const api = {
   updateWhatsAppSettings: (data) => axios.put(`${API}/settings/whatsapp`, data),
   getDatabaseSettings: () => axios.get(`${API}/settings/database`),
   updateDatabaseSettings: (data) => axios.put(`${API}/settings/database`, data),
+  getSchoolSettings: () => axios.get(`${API}/settings/school`),
+  updateSchoolSettings: (data) => axios.put(`${API}/settings/school`, data),
 
   // Upload
   uploadFile: (file) => {

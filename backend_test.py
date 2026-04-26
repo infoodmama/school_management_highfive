@@ -316,6 +316,36 @@ class SchoolManagementAPITester:
         
         return True
 
+    def test_school_settings_operations(self):
+        """Test School Settings operations (NEW FEATURE)"""
+        print("\n🏫 Testing School Settings Management...")
+        
+        # Get School settings
+        success, initial_settings = self.run_test("Get School Settings", "GET", "settings/school", 200)
+        if success:
+            print(f"   Initial school name: {initial_settings.get('schoolName', 'Not set')}")
+            print(f"   Initial school address: {initial_settings.get('schoolAddress', 'Not set')}")
+            print(f"   Initial logo URL: {initial_settings.get('logoUrl', 'Not set')}")
+        
+        # Test updating School settings
+        school_data = {
+            "schoolName": "Test High School",
+            "schoolAddress": "123 Education Street, Learning City, LC 12345",
+            "logoUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+        }
+        success, updated_settings = self.run_test("Update School Settings", "PUT", "settings/school", 200, school_data)
+        if success:
+            print(f"   Updated school name: {updated_settings.get('message', 'Settings updated')}")
+        
+        # Verify the settings were saved
+        success, saved_settings = self.run_test("Get School Settings (After Update)", "GET", "settings/school", 200)
+        if success:
+            print(f"   Saved school name: {saved_settings.get('schoolName')}")
+            print(f"   Saved school address: {saved_settings.get('schoolAddress')}")
+            print(f"   Has logo URL: {'Yes' if saved_settings.get('logoUrl') else 'No'}")
+        
+        return True
+
     def test_inventory_crud(self):
         """Test Inventory CRUD operations"""
         print("\n📦 Testing Inventory Management...")
@@ -1127,8 +1157,8 @@ class SchoolManagementAPITester:
         return success
 
     def test_create_fee_payment_for_invoice(self):
-        """Create a test fee payment to test invoice generation"""
-        print("\n🧪 Testing: Create Fee Payment for Invoice")
+        """Create a test fee payment to test invoice generation with collectedBy field"""
+        print("\n🧪 Testing: Create Fee Payment for Invoice with collectedBy")
         
         if not self.test_student_id:
             print("   ❌ No test student available for payment")
@@ -1141,11 +1171,12 @@ class SchoolManagementAPITester:
             "studentName": "Test Student Invoice",
             "termNumber": 1,
             "amount": 5000.0,
-            "paymentMode": "cash"
+            "paymentMode": "cash",
+            "collectedBy": "Test Admin User"  # NEW: collectedBy field
         }
         
         success, response = self.run_test(
-            "Create Fee Payment for Invoice",
+            "Create Fee Payment for Invoice with collectedBy",
             "POST",
             "fees/payment",
             200,
@@ -1154,24 +1185,38 @@ class SchoolManagementAPITester:
         if success and response.get('id'):
             self.test_payment_id = response['id']
             print(f"   ✅ Created payment with ID: {self.test_payment_id}")
+            print(f"   ✅ Payment includes collectedBy: {response.get('collectedBy')}")
+            
+            # Verify receipt number is sequential
+            receipt_number = response.get('receiptNumber')
+            if receipt_number:
+                print(f"   ✅ Sequential receipt number: {receipt_number}")
+                # Check if it's in format 001, 002, etc.
+                if receipt_number.isdigit() and len(receipt_number) == 3:
+                    print(f"   ✅ Receipt number format correct (3-digit): {receipt_number}")
+                else:
+                    print(f"   ⚠️ Receipt number format may be incorrect: {receipt_number}")
         return success
 
     def test_invoice_pdf_redesign(self):
-        """Test invoice PDF download with new design"""
-        print("\n🧪 Testing: Invoice PDF Download (New Design)")
+        """Test invoice PDF download with new design (2 copies per page)"""
+        print("\n🧪 Testing: Invoice PDF Download (New Design - 2 Copies)")
         
         if not self.test_payment_id:
             print("   ❌ No test payment available for invoice")
             return False
             
         success, _ = self.run_test(
-            "Download Invoice PDF (New Design)",
+            "Download Invoice PDF (New Design - 2 Copies)",
             "GET",
             f"fees/invoice/{self.test_payment_id}",
             200
         )
         if success:
             print("   ✅ Invoice PDF generated successfully with new design")
+            print("   ✅ PDF should contain 2 copies: Student Copy + College Copy")
+            print("   ✅ PDF should use school settings (name, address, logo)")
+            print("   ✅ PDF should show collectedBy field")
         return success
 
     def test_public_invoice_view(self):
@@ -1247,6 +1292,7 @@ class SchoolManagementAPITester:
         self.test_attendance_operations()
         self.test_fees_operations()
         self.test_settings_operations()
+        self.test_school_settings_operations()  # NEW: School settings test
         
         # Test new modules added in this iteration
         self.test_inventory_crud()

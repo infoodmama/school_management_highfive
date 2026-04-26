@@ -153,6 +153,7 @@ class FeePayment(BaseModel):
     paymentMode: str
     upiScreenshot: Optional[str] = None
     receiptNumber: str
+    collectedBy: Optional[str] = None
     paymentDate: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class FeePaymentCreate(BaseModel):
@@ -166,6 +167,7 @@ class FeePaymentCreate(BaseModel):
     amount: float
     paymentMode: str
     upiScreenshot: Optional[str] = None
+    collectedBy: Optional[str] = None
 
 class Expense(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -185,6 +187,11 @@ class ExpenseCreate(BaseModel):
 class WhatsAppSettings(BaseModel):
     phoneNumberId: str
     accessToken: str
+
+class SchoolSettings(BaseModel):
+    schoolName: str
+    schoolAddress: str
+    logoUrl: Optional[str] = None
 
 class PromoteRequest(BaseModel):
     fromClass: str
@@ -393,117 +400,134 @@ async def send_whatsapp_message(mobile, message, settings=None):
 
 # ==================== PDF INVOICE GENERATION ====================
 
-def generate_invoice_pdf(payment_data, student_data):
+def generate_invoice_pdf(payment_data, student_data, school_settings=None):
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=15*mm, bottomMargin=15*mm, leftMargin=15*mm, rightMargin=15*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=10*mm, bottomMargin=8*mm, leftMargin=12*mm, rightMargin=12*mm)
     styles = getSampleStyleSheet()
     elements = []
 
-    # Colors matching the design
+    school_name = (school_settings or {}).get('schoolName', 'SchoolPro')
+    school_address = (school_settings or {}).get('schoolAddress', '')
+
     purple_dark = colors.HexColor('#6B21A8')
     purple_light = colors.HexColor('#9333EA')
+    gray_text = colors.HexColor('#6B7280')
+    light_border = colors.HexColor('#E5E7EB')
 
-    # School Name Header
-    school_style = ParagraphStyle('School', parent=styles['Title'], fontSize=22, textColor=purple_dark, alignment=1, spaceAfter=2)
-    elements.append(Paragraph("SchoolPro Management", school_style))
-    elements.append(Spacer(1, 3*mm))
-
-    # Receipt header bar
     receipt_id = payment_data.get('receiptNumber', '')
-    pay_date = payment_data.get('paymentDate', '')[:10] if isinstance(payment_data.get('paymentDate'), str) else datetime.now().strftime('%d-%m-%Y')
-    # Format date as DD-MM-YYYY
-    try:
-        from datetime import datetime as dt2
-        d = dt2.fromisoformat(pay_date) if 'T' not in pay_date else dt2.fromisoformat(pay_date.split('T')[0])
-        pay_date = d.strftime('%d-%m-%Y')
-    except Exception:
-        pass
+    pay_date = payment_data.get('paymentDate', '')
+    if isinstance(pay_date, str) and len(pay_date) >= 10:
+        try:
+            parts = pay_date[:10].split('-')
+            pay_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+        except Exception:
+            pay_date = pay_date[:10]
+    else:
+        pay_date = datetime.now().strftime('%d-%m-%Y')
 
-    header_data = [[f"Receipt ID: #{receipt_id}", "STUDENT FEE RECEIPT", f"Date: {pay_date}"]]
-    ht = RLTable(header_data, colWidths=[170, 220, 140])
-    ht.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), purple_dark),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-        ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('LEFTPADDING', (0, 0), (-1, 0), 10),
-        ('RIGHTPADDING', (0, 0), (-1, 0), 10),
-    ]))
-    elements.append(ht)
-    elements.append(Spacer(1, 2*mm))
-
-    # Student details bar
     student_code = student_data.get('studentCode', student_data.get('rollNo', ''))
     student_name = student_data.get('studentName', '')
     fee_label = f"Term {payment_data.get('termNumber')}" if payment_data.get('termNumber') else (payment_data.get('feeName') or 'Custom Fee')
     amount = payment_data.get('amount', 0)
+    collected_by = payment_data.get('collectedBy', 'Admin')
     payment_mode = payment_data.get('paymentMode', '').upper()
 
-    # Table header
-    th_data = [["STUDENT NAME & ID", "FEE TYPE", "AMOUNT PAID"]]
-    tht = RLTable(th_data, colWidths=[220, 160, 150])
-    tht.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), purple_light),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 8),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        ('LEFTPADDING', (0, 0), (-1, 0), 10),
-        ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
-    ]))
-    elements.append(tht)
+    def build_receipt_copy(copy_type):
+        """Build one receipt copy (Student/College)"""
+        copy_elements = []
 
-    # Table data
-    td_data = [[f"{student_code} - {student_name}", fee_label, f"Rs. {amount:,.2f}"]]
-    tdt = RLTable(td_data, colWidths=[220, 160, 150])
-    tdt.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('TOPPADDING', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('LEFTPADDING', (0, 0), (-1, -1), 10),
-        ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
-    ]))
-    elements.append(tdt)
+        # School Name
+        name_style = ParagraphStyle('SN', parent=styles['Title'], fontSize=18, textColor=purple_dark, alignment=1, spaceAfter=1, leading=20)
+        copy_elements.append(Paragraph(school_name, name_style))
+        if school_address:
+            addr_style = ParagraphStyle('SA', parent=styles['Normal'], fontSize=8, textColor=gray_text, alignment=1, spaceAfter=2)
+            copy_elements.append(Paragraph(school_address, addr_style))
+        copy_elements.append(Spacer(1, 2*mm))
+
+        # Header bar: Receipt ID | COPY TYPE FEE RECEIPT | Date
+        hdr_label = "STUDENT FEE RECEIPT" if copy_type == "student" else "COLLEGE FEE RECEIPT"
+        hdr = [[f"Receipt ID: #{receipt_id}", hdr_label, f"Date: {pay_date}"]]
+        ht = RLTable(hdr, colWidths=[155, 220, 115])
+        ht.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), purple_dark),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('ALIGN', (0, 0), (0, 0), 'LEFT'), ('ALIGN', (1, 0), (1, 0), 'CENTER'), ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, 0), 8), ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('LEFTPADDING', (0, 0), (-1, 0), 8), ('RIGHTPADDING', (0, 0), (-1, 0), 8),
+        ]))
+        copy_elements.append(ht)
+        copy_elements.append(Spacer(1, 1*mm))
+
+        # Table header
+        th = [["STUDENT NAME & ID", "FEE TYPE", "AMOUNT PAID"]]
+        tht = RLTable(th, colWidths=[200, 170, 120])
+        tht.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), purple_light),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('TOPPADDING', (0, 0), (-1, 0), 7), ('BOTTOMPADDING', (0, 0), (-1, 0), 7),
+            ('LEFTPADDING', (0, 0), (-1, 0), 8), ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
+        ]))
+        copy_elements.append(tht)
+
+        # Table data
+        td = [[f"{student_code} - {student_name}", fee_label, f"Rs. {amount:,.2f}"]]
+        tdt = RLTable(td, colWidths=[200, 170, 120])
+        tdt.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'), ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 8), ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8), ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+            ('BOX', (0, 0), (-1, -1), 0.5, light_border),
+        ]))
+        copy_elements.append(tdt)
+        copy_elements.append(Spacer(1, 2*mm))
+
+        # Additional details row
+        detail_data = [
+            [f"Class: {student_data.get('studentClass', '')} - {student_data.get('section', '')}", f"Father: {student_data.get('fatherName', '')}", f"Mode: {payment_mode}"],
+        ]
+        ddt = RLTable(detail_data, colWidths=[170, 180, 140])
+        ddt.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 8), ('TEXTCOLOR', (0, 0), (-1, -1), gray_text),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ]))
+        copy_elements.append(ddt)
+        copy_elements.append(Spacer(1, 2*mm))
+
+        # Note
+        n = ParagraphStyle('N', parent=styles['Normal'], fontSize=7, textColor=colors.HexColor('#9CA3AF'), alignment=0)
+        copy_elements.append(Paragraph("Note: Some Times Fee Payments Take Time To Update In Our System", n))
+        copy_elements.append(Spacer(1, 2*mm))
+
+        # Computer generated + Collected by
+        g = ParagraphStyle('G', parent=styles['Normal'], fontSize=8, textColor=gray_text, alignment=1)
+        copy_elements.append(Paragraph("This is a computer-generated invoice and does not require a physical signature.", g))
+        copy_elements.append(Spacer(1, 1*mm))
+        copy_elements.append(Paragraph(f"Processed By: {collected_by}", g))
+
+        return copy_elements
+
+    # Build Student Copy
+    elements.extend(build_receipt_copy("student"))
+
+    # Separator line
+    elements.append(Spacer(1, 4*mm))
+    sep_data = [["- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"]]
+    sep = RLTable(sep_data, colWidths=[490])
+    sep.setStyle(TableStyle([('ALIGN', (0, 0), (0, 0), 'CENTER'), ('TEXTCOLOR', (0, 0), (0, 0), colors.HexColor('#D1D5DB')), ('FONTSIZE', (0, 0), (0, 0), 7)]))
+    elements.append(sep)
     elements.append(Spacer(1, 4*mm))
 
-    # Additional details
-    detail_data = [
-        ["Class:", f"{student_data.get('studentClass', '')} - {student_data.get('section', '')}"],
-        ["Father Name:", student_data.get('fatherName', '')],
-        ["Mobile:", student_data.get('mobile', '')],
-        ["Payment Mode:", payment_mode],
-    ]
-    dt = RLTable(detail_data, colWidths=[120, 410])
-    dt.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#6B7280')),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-    ]))
-    elements.append(dt)
-    elements.append(Spacer(1, 6*mm))
-
-    # Note
-    note_style = ParagraphStyle('Note', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#9CA3AF'), alignment=1)
-    elements.append(Paragraph("Note: Some Times Fee Payments Take Time To Update In Our System", note_style))
-    elements.append(Spacer(1, 4*mm))
-
-    # Computer generated notice
-    gen_style = ParagraphStyle('Gen', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#6B7280'), alignment=1)
-    elements.append(Paragraph("This is a computer-generated invoice and does not require a physical signature.", gen_style))
-    elements.append(Spacer(1, 3*mm))
+    # Build College Copy
+    elements.extend(build_receipt_copy("college"))
 
     # Footer
-    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#D1D5DB'), alignment=1)
-    elements.append(Paragraph("Software Designed & Developed By SchoolPro", footer_style))
+    elements.append(Spacer(1, 3*mm))
+    f = ParagraphStyle('F', parent=styles['Normal'], fontSize=7, textColor=colors.HexColor('#D1D5DB'), alignment=1)
+    elements.append(Paragraph("Software Designed & Developed By SchoolPro", f))
 
     doc.build(elements)
     buf.seek(0)
@@ -904,7 +928,19 @@ async def get_student_fees(student_code: str):
 
 @api_router.post("/fees/payment")
 async def create_fee_payment(payment: FeePaymentCreate):
-    receipt_number = f"RCP-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4]}"
+    # Generate sequential receipt number
+    last_payment = await db.fee_payments.find({}, {"_id": 0, "receiptNumber": 1}).sort("receiptNumber", -1).to_list(1)
+    if last_payment:
+        try:
+            last_num = int(last_payment[0]['receiptNumber'])
+            next_num = last_num + 1
+        except (ValueError, KeyError):
+            count = await db.fee_payments.count_documents({})
+            next_num = count + 1
+    else:
+        next_num = 1
+    receipt_number = str(next_num).zfill(3)
+
     payment_obj = FeePayment(**payment.model_dump(), receiptNumber=receipt_number)
     doc = payment_obj.model_dump()
     doc['paymentDate'] = doc['paymentDate'].isoformat()
@@ -925,7 +961,8 @@ async def download_invoice(payment_id: str):
     if not payment: raise HTTPException(status_code=404, detail="Payment not found")
     student = await db.students.find_one({"studentCode": payment.get('studentCode', payment.get('rollNo', ''))}, {"_id": 0})
     if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentCode": payment.get('studentCode', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
-    buf = generate_invoice_pdf(payment, student)
+    school = await db.settings.find_one({"type": "school"}, {"_id": 0})
+    buf = generate_invoice_pdf(payment, student, school)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=invoice_{payment['receiptNumber']}.pdf"})
 
 @api_router.get("/fees/invoice-view/{payment_id}")
@@ -935,7 +972,8 @@ async def view_invoice(payment_id: str):
     if not payment: raise HTTPException(status_code=404, detail="Payment not found")
     student = await db.students.find_one({"studentCode": payment.get('studentCode', payment.get('rollNo', ''))}, {"_id": 0})
     if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentCode": payment.get('studentCode', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
-    buf = generate_invoice_pdf(payment, student)
+    school = await db.settings.find_one({"type": "school"}, {"_id": 0})
+    buf = generate_invoice_pdf(payment, student, school)
     return StreamingResponse(buf, media_type="application/pdf")
 
 @api_router.get("/fees/day-sheet")
@@ -1027,6 +1065,17 @@ async def get_whatsapp_settings():
 async def update_whatsapp_settings(settings: WhatsAppSettings):
     await db.settings.update_one({"type": "whatsapp"}, {"$set": {"phoneNumberId": settings.phoneNumberId, "accessToken": settings.accessToken}}, upsert=True)
     return {"message": "Settings updated"}
+
+@api_router.get("/settings/school")
+async def get_school_settings():
+    settings = await db.settings.find_one({"type": "school"}, {"_id": 0})
+    if not settings: return {"schoolName": "SchoolPro", "schoolAddress": "", "logoUrl": ""}
+    return settings
+
+@api_router.put("/settings/school")
+async def update_school_settings(data: SchoolSettings):
+    await db.settings.update_one({"type": "school"}, {"$set": {"schoolName": data.schoolName, "schoolAddress": data.schoolAddress, "logoUrl": data.logoUrl or ""}}, upsert=True)
+    return {"message": "School settings updated"}
 
 # ==================== FILE UPLOAD ====================
 
