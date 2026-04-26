@@ -73,7 +73,7 @@ class DatabaseSettings(BaseModel):
 class Student(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    studentCode: str  # Unique admission/student ID (e.g., ADM001)
+    studentCode: str = ""  # Unique admission/student ID (e.g., ADM001)
     studentName: str
     rollNo: str  # Class-wise roll number (not unique)
     studentClass: str
@@ -395,52 +395,115 @@ async def send_whatsapp_message(mobile, message, settings=None):
 
 def generate_invoice_pdf(payment_data, student_data):
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20*mm, bottomMargin=20*mm)
+    doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=15*mm, bottomMargin=15*mm, leftMargin=15*mm, rightMargin=15*mm)
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('Title', parent=styles['Title'], fontSize=20, spaceAfter=10)
     elements = []
 
-    elements.append(Paragraph("SchoolPro - Fee Receipt", title_style))
-    elements.append(Spacer(1, 5*mm))
+    # Colors matching the design
+    purple_dark = colors.HexColor('#6B21A8')
+    purple_light = colors.HexColor('#9333EA')
 
-    info_data = [
-        ["Receipt No:", payment_data.get('receiptNumber', '')],
-        ["Date:", payment_data.get('paymentDate', '')[:10] if isinstance(payment_data.get('paymentDate'), str) else datetime.now().strftime('%Y-%m-%d')],
-        ["Student Name:", student_data.get('studentName', '')],
-        ["Student ID:", student_data.get('studentCode', '')],
-        ["Roll No:", student_data.get('rollNo', '')],
+    # School Name Header
+    school_style = ParagraphStyle('School', parent=styles['Title'], fontSize=22, textColor=purple_dark, alignment=1, spaceAfter=2)
+    elements.append(Paragraph("SchoolPro Management", school_style))
+    elements.append(Spacer(1, 3*mm))
+
+    # Receipt header bar
+    receipt_id = payment_data.get('receiptNumber', '')
+    pay_date = payment_data.get('paymentDate', '')[:10] if isinstance(payment_data.get('paymentDate'), str) else datetime.now().strftime('%d-%m-%Y')
+    # Format date as DD-MM-YYYY
+    try:
+        from datetime import datetime as dt2
+        d = dt2.fromisoformat(pay_date) if 'T' not in pay_date else dt2.fromisoformat(pay_date.split('T')[0])
+        pay_date = d.strftime('%d-%m-%Y')
+    except Exception:
+        pass
+
+    header_data = [[f"Receipt ID: #{receipt_id}", "STUDENT FEE RECEIPT", f"Date: {pay_date}"]]
+    ht = RLTable(header_data, colWidths=[170, 220, 140])
+    ht.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), purple_dark),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+        ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
+        ('TOPPADDING', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('LEFTPADDING', (0, 0), (-1, 0), 10),
+        ('RIGHTPADDING', (0, 0), (-1, 0), 10),
+    ]))
+    elements.append(ht)
+    elements.append(Spacer(1, 2*mm))
+
+    # Student details bar
+    student_code = student_data.get('studentCode', student_data.get('rollNo', ''))
+    student_name = student_data.get('studentName', '')
+    fee_label = f"Term {payment_data.get('termNumber')}" if payment_data.get('termNumber') else (payment_data.get('feeName') or 'Custom Fee')
+    amount = payment_data.get('amount', 0)
+    payment_mode = payment_data.get('paymentMode', '').upper()
+
+    # Table header
+    th_data = [["STUDENT NAME & ID", "FEE TYPE", "AMOUNT PAID"]]
+    tht = RLTable(th_data, colWidths=[220, 160, 150])
+    tht.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), purple_light),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('LEFTPADDING', (0, 0), (-1, 0), 10),
+        ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
+    ]))
+    elements.append(tht)
+
+    # Table data
+    td_data = [[f"{student_code} - {student_name}", fee_label, f"Rs. {amount:,.2f}"]]
+    tdt = RLTable(td_data, colWidths=[220, 160, 150])
+    tdt.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('LEFTPADDING', (0, 0), (-1, -1), 10),
+        ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E5E7EB')),
+    ]))
+    elements.append(tdt)
+    elements.append(Spacer(1, 4*mm))
+
+    # Additional details
+    detail_data = [
         ["Class:", f"{student_data.get('studentClass', '')} - {student_data.get('section', '')}"],
         ["Father Name:", student_data.get('fatherName', '')],
         ["Mobile:", student_data.get('mobile', '')],
+        ["Payment Mode:", payment_mode],
     ]
-    t = RLTable(info_data, colWidths=[120, 350])
-    t.setStyle(TableStyle([
+    dt = RLTable(detail_data, colWidths=[120, 410])
+    dt.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (0, -1), colors.HexColor('#6B7280')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
     ]))
-    elements.append(t)
-    elements.append(Spacer(1, 8*mm))
+    elements.append(dt)
+    elements.append(Spacer(1, 6*mm))
 
-    fee_label = f"Term {payment_data.get('termNumber')}" if payment_data.get('termNumber') else (payment_data.get('feeName') or 'Custom Fee')
-    pay_data = [
-        ["Fee Type", "Amount", "Payment Mode"],
-        [fee_label, f"Rs. {payment_data.get('amount', 0):,.2f}", payment_data.get('paymentMode', '').upper()],
-    ]
-    pt = RLTable(pay_data, colWidths=[200, 150, 120])
-    pt.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0ea5e9')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ('TOPPADDING', (0, 0), (-1, -1), 8),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-    ]))
-    elements.append(pt)
-    elements.append(Spacer(1, 10*mm))
-    elements.append(Paragraph("This is a computer-generated receipt.", styles['Normal']))
+    # Note
+    note_style = ParagraphStyle('Note', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#9CA3AF'), alignment=1)
+    elements.append(Paragraph("Note: Some Times Fee Payments Take Time To Update In Our System", note_style))
+    elements.append(Spacer(1, 4*mm))
+
+    # Computer generated notice
+    gen_style = ParagraphStyle('Gen', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#6B7280'), alignment=1)
+    elements.append(Paragraph("This is a computer-generated invoice and does not require a physical signature.", gen_style))
+    elements.append(Spacer(1, 3*mm))
+
+    # Footer
+    footer_style = ParagraphStyle('Footer', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#D1D5DB'), alignment=1)
+    elements.append(Paragraph("Software Designed & Developed By SchoolPro", footer_style))
 
     doc.build(elements)
     buf.seek(0)
@@ -636,6 +699,7 @@ async def get_students(studentClass: Optional[str] = None, section: Optional[str
     students = await db.students.find(query, {"_id": 0}).to_list(1000)
     for s in students:
         if isinstance(s.get('createdAt'), str): s['createdAt'] = datetime.fromisoformat(s['createdAt'])
+        if 'studentCode' not in s: s['studentCode'] = s.get('rollNo', '')  # Backfill for old records
     return students
 
 @api_router.put("/students/{student_id}", response_model=Student)
@@ -658,6 +722,16 @@ async def delete_student(student_id: str):
 async def promote_students(request: PromoteRequest):
     result = await db.students.update_many({"studentClass": request.fromClass}, {"$set": {"studentClass": request.toClass}})
     return {"message": f"Promoted {result.modified_count} students from {request.fromClass} to {request.toClass}"}
+
+class BulkDeleteRequest(BaseModel):
+    studentIds: List[str]
+
+@api_router.post("/students/bulk-delete")
+async def bulk_delete_students(data: BulkDeleteRequest):
+    if not data.studentIds:
+        raise HTTPException(status_code=400, detail="No students selected")
+    result = await db.students.delete_many({"id": {"$in": data.studentIds}})
+    return {"message": f"Deleted {result.deleted_count} students"}
 
 # ==================== ATTENDANCE ROUTES ====================
 

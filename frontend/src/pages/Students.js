@@ -19,6 +19,7 @@ const Students = () => {
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showPromoteDialog, setShowPromoteDialog] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
   const [filters, setFilters] = useState({ studentClass: '', section: '', search: '' });
   const [formData, setFormData] = useState({
     studentCode: '', studentName: '', rollNo: '', studentClass: '', section: '',
@@ -106,6 +107,26 @@ const Students = () => {
     if (!window.confirm('Are you sure?')) return;
     try { await api.deleteStudent(id); toast.success('Student deleted'); loadStudents(); }
     catch (error) { toast.error('Failed to delete student'); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) { toast.error('No students selected'); return; }
+    if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} students?`)) return;
+    try {
+      const response = await api.bulkDeleteStudents(selectedIds);
+      toast.success(response.data.message);
+      setSelectedIds([]);
+      loadStudents();
+    } catch (error) { toast.error('Failed to delete students'); }
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === students.length) { setSelectedIds([]); }
+    else { setSelectedIds(students.map((s) => s.id)); }
+  };
+
+  const toggleSelect = (id) => {
+    setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
   };
 
   const handlePromote = async (e) => {
@@ -197,6 +218,12 @@ const Students = () => {
 
           <Button data-testid="download-sample-csv" onClick={handleDownloadSample} variant="outline" className="font-bold rounded-xl"><Download className="w-5 h-5 mr-2" />Sample CSV</Button>
 
+          {selectedIds.length > 0 && (
+            <Button data-testid="bulk-delete-btn" onClick={handleBulkDelete} className="bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl active:scale-95 transition-transform">
+              <Trash2 className="w-5 h-5 mr-2" />Delete ({selectedIds.length})
+            </Button>
+          )}
+
           <Dialog open={showPromoteDialog} onOpenChange={setShowPromoteDialog}>
             <DialogTrigger asChild>
               <Button data-testid="promote-students-btn" variant="outline" className="font-bold rounded-xl bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200"><TrendingUp className="w-5 h-5 mr-2" />Promote</Button>
@@ -262,6 +289,7 @@ const Students = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50">
+                  <TableHead className="w-10"><input type="checkbox" checked={selectedIds.length === students.length && students.length > 0} onChange={toggleSelectAll} className="w-4 h-4 rounded accent-sky-500" data-testid="select-all-checkbox" /></TableHead>
                   <TableHead className="font-bold uppercase text-xs text-slate-600">Student ID</TableHead>
                   <TableHead className="font-bold uppercase text-xs text-slate-600">Roll No</TableHead>
                   <TableHead className="font-bold uppercase text-xs text-slate-600">Name</TableHead>
@@ -274,6 +302,7 @@ const Students = () => {
               <TableBody>
                 {students.map((student) => (
                   <TableRow key={student.id} className="hover:bg-slate-50/80" data-testid={`student-row-${student.rollNo}`}>
+                    <TableCell><input type="checkbox" checked={selectedIds.includes(student.id)} onChange={() => toggleSelect(student.id)} className="w-4 h-4 rounded accent-sky-500" /></TableCell>
                     <TableCell className="font-semibold text-slate-900">{student.studentCode}</TableCell>
                     <TableCell className="text-slate-700">{student.rollNo}</TableCell>
                     <TableCell className="font-medium text-slate-700">{student.studentName}</TableCell>

@@ -12,6 +12,8 @@ class SchoolManagementAPITester:
         self.tests_run = 0
         self.tests_passed = 0
         self.test_results = []
+        self.test_student_id = None
+        self.test_payment_id = None
 
     def run_test(self, name, method, endpoint, expected_status, data=None, params=None):
         """Run a single API test"""
@@ -1093,6 +1095,145 @@ class SchoolManagementAPITester:
         
         return success
 
+    def test_create_test_student_for_invoice(self):
+        """Create a test student for invoice testing"""
+        print("\n🧪 Testing: Create Test Student for Invoice")
+        
+        test_student_data = {
+            "studentCode": "TEST001",
+            "studentName": "Test Student Invoice",
+            "rollNo": "999",
+            "studentClass": "1",
+            "section": "A", 
+            "fatherName": "Test Father",
+            "motherName": "Test Mother",
+            "mobile": "9999999999",
+            "address": "Test Address",
+            "feeTerm1": 5000.0,
+            "feeTerm2": 5000.0,
+            "feeTerm3": 5000.0
+        }
+        
+        success, response = self.run_test(
+            "Create Test Student for Invoice",
+            "POST",
+            "students",
+            200,
+            data=test_student_data
+        )
+        if success and response.get('id'):
+            self.test_student_id = response['id']
+            print(f"   ✅ Created test student with ID: {self.test_student_id}")
+        return success
+
+    def test_create_fee_payment_for_invoice(self):
+        """Create a test fee payment to test invoice generation"""
+        print("\n🧪 Testing: Create Fee Payment for Invoice")
+        
+        if not self.test_student_id:
+            print("   ❌ No test student available for payment")
+            return False
+            
+        payment_data = {
+            "studentId": self.test_student_id,
+            "studentCode": "TEST001",
+            "rollNo": "999",
+            "studentName": "Test Student Invoice",
+            "termNumber": 1,
+            "amount": 5000.0,
+            "paymentMode": "cash"
+        }
+        
+        success, response = self.run_test(
+            "Create Fee Payment for Invoice",
+            "POST",
+            "fees/payment",
+            200,
+            data=payment_data
+        )
+        if success and response.get('id'):
+            self.test_payment_id = response['id']
+            print(f"   ✅ Created payment with ID: {self.test_payment_id}")
+        return success
+
+    def test_invoice_pdf_redesign(self):
+        """Test invoice PDF download with new design"""
+        print("\n🧪 Testing: Invoice PDF Download (New Design)")
+        
+        if not self.test_payment_id:
+            print("   ❌ No test payment available for invoice")
+            return False
+            
+        success, _ = self.run_test(
+            "Download Invoice PDF (New Design)",
+            "GET",
+            f"fees/invoice/{self.test_payment_id}",
+            200
+        )
+        if success:
+            print("   ✅ Invoice PDF generated successfully with new design")
+        return success
+
+    def test_public_invoice_view(self):
+        """Test public invoice view endpoint"""
+        print("\n🧪 Testing: Public Invoice View Endpoint")
+        
+        if not self.test_payment_id:
+            print("   ❌ No test payment available for invoice view")
+            return False
+            
+        success, _ = self.run_test(
+            "View Invoice PDF (Public URL)",
+            "GET", 
+            f"fees/invoice-view/{self.test_payment_id}",
+            200
+        )
+        if success:
+            public_url = f"{self.api_url}/fees/invoice-view/{self.test_payment_id}"
+            print(f"   ✅ Public invoice URL accessible: {public_url}")
+        return success
+
+    def test_bulk_delete_students_endpoint(self):
+        """Test bulk delete students endpoint"""
+        print("\n🧪 Testing: Bulk Delete Students Endpoint")
+        
+        # Test with empty list (should return 400)
+        success1, _ = self.run_test(
+            "Bulk Delete Students (Empty List)",
+            "POST",
+            "students/bulk-delete",
+            400,
+            data={"studentIds": []}
+        )
+        
+        # Test with invalid student IDs (should return success but delete 0)
+        success2, response = self.run_test(
+            "Bulk Delete Students (Invalid IDs)",
+            "POST",
+            "students/bulk-delete",
+            200,
+            data={"studentIds": ["invalid-id-1", "invalid-id-2"]}
+        )
+        
+        if success1 and success2:
+            print("   ✅ Bulk delete endpoint working correctly")
+            return True
+        return False
+
+    def cleanup_test_data(self):
+        """Clean up test student and payment data"""
+        print("\n🧹 Cleaning up test data...")
+        
+        if self.test_student_id:
+            success, _ = self.run_test(
+                "Cleanup Test Student",
+                "DELETE",
+                f"students/{self.test_student_id}",
+                200
+            )
+            if success:
+                print("   ✅ Test student cleaned up")
+
     def run_all_tests(self):
         """Run all API tests"""
         print("🚀 Starting School Management System API Tests...")
@@ -1130,6 +1271,16 @@ class SchoolManagementAPITester:
         self.test_homework_file_upload()
         self.test_event_file_upload()
         self.test_parent_portal_homework_filter()
+        
+        # Test LATEST features for invoice redesign and bulk delete
+        self.test_create_test_student_for_invoice()
+        self.test_create_fee_payment_for_invoice()
+        self.test_invoice_pdf_redesign()
+        self.test_public_invoice_view()
+        self.test_bulk_delete_students_endpoint()
+        
+        # Cleanup test data
+        self.cleanup_test_data()
         
         # Print summary
         print(f"\n📊 Test Summary:")

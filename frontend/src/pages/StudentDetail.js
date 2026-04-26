@@ -45,7 +45,7 @@ const StudentDetail = () => {
           </div>
           <div>
             <h1 className="text-2xl font-extrabold text-slate-900" style={{ fontFamily: 'Nunito' }}>{student.studentName}</h1>
-            <p className="text-sm text-slate-500 font-medium">Roll No: {student.rollNo} | Class {student.studentClass} - {student.section}</p>
+            <p className="text-sm text-slate-500 font-medium">Student ID: {student.studentCode} | Roll No: {student.rollNo} | Class {student.studentClass} - {student.section}</p>
           </div>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

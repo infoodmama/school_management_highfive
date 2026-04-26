@@ -27,6 +27,7 @@ export const api = {
   getSampleCSV: () => axios.get(`${API}/students/sample-csv`, { responseType: 'blob' }),
   updateStudent: (id, data) => axios.put(`${API}/students/${id}`, data),
   deleteStudent: (id) => axios.delete(`${API}/students/${id}`),
+  bulkDeleteStudents: (studentIds) => axios.post(`${API}/students/bulk-delete`, { studentIds }),
   promoteStudents: (data) => axios.post(`${API}/students/promote`, data),
 
   // Attendance
