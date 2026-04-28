@@ -260,10 +260,14 @@ const ParentPortal = () => {
                   const term = feeStructure?.[t] || { total: 0, paid: 0 };
                   const pending = term.total - term.paid;
                   const paid = term.paid >= term.total;
+                  const isPrevDue = i === 0 && (student.previousYearDues?.amount || 0) > 0;
                   return (
                     <div key={t} className={`rounded-xl border p-4 ${paid ? 'border-emerald-300 bg-emerald-50/40' : term.paid > 0 ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
                       <div className="flex items-center justify-between mb-2">
-                        <h4 className="font-bold text-slate-900">Term {i + 1}</h4>
+                        <div>
+                          <h4 className="font-bold text-slate-900">Term {i + 1}</h4>
+                          {isPrevDue && <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-100 text-amber-700">Prev Year Due</span>}
+                        </div>
                         {paid ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500 text-white">PAID</span>
                           : term.paid > 0 ? <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white">PARTIAL</span>
                           : <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700">UNPAID</span>}

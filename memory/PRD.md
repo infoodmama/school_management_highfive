@@ -38,21 +38,29 @@
 
 ## CHANGELOG
 
-### 2026-02-28 (this fork)
+### 2026-02-28 (this fork) — UPDATED Fee Promotion Rules
 - **Backend**
-  - Fixed orphaned code in `send_fee_reminders` (broken due to concession-routes injection)
-  - `promote_students` now puts ALL pending dues into new Term 1 only; Terms 2 & 3 keep fresh-year values; stores `previousYearDues` metadata on each student
-  - Added `POST /api/concessions/bulk` accepting `studentCodes[]`, returns `{created, students, errors}`
-  - Added `LeaveRequest` / `LeaveRequestCreate` models
-  - Added `POST /api/leave-requests`, `GET /api/leave-requests` (filter by status/studentId/studentClass/section), `POST /{id}/approve`, `POST /{id}/reject`
+  - `promote_students` rewrite per refined user spec:
+    - `total_due = (T1 + T2 + T3 + applicable custom fees) − total paid (active payments)`
+    - new T1 = total_due (labeled "Previous Year Due")
+    - new T2 = base T2 (unchanged)
+    - new T3 = base T3 + ₹5000 (new year hike for all students)
+    - All previous payments archived (`status: 'archived'`) so paid resets to 0 in new year
+    - Custom fees NOT carried forward — old custom fees archived; new custom fees only apply if newly created for the new class
+  - `get_student_fees`, `get_fee_status`, `get_student_detail`, `parent dashboard`, `day-sheet` all skip both `reverted` and `archived` payments
+  - Verified: 1000+2000+3000 fees with 400 paid → after promote: T1=5600, T2=2000, T3=8000, paid=0
+  - Fixed orphaned code in `send_fee_reminders`
+  - Added `POST /api/concessions/bulk` (multiple students)
+  - Added `LeaveRequest` CRUD: `POST /api/leave-requests`, `GET`, `POST /{id}/approve`, `POST /{id}/reject`
 - **Frontend**
-  - New page `/approvals` (Approvals.js) with Leave + Concessions tabs; teacher sees Leave-only
-  - ParentPortal gained a **Leave** tab — date range + reason + optional file upload + history list
-  - Fees → Concessions tab now has Single/Bulk mode toggle; history card limited to last 4 records with tip to visit Approvals
-  - AuthContext, Layout, App routes updated to expose `/approvals`
-  - api.js extended with leave-requests + bulk concession helpers
-  - Added `data-testid="parent-tab-{key}"` on Parent Portal tab buttons
-- **Testing** — 100% pass on `iteration_10.json` (20/20 backend pytest + 3/3 frontend e2e flows)
+  - New `/approvals` page (Approvals.js) — Leave + Concessions tabs; teacher sees Leave-only
+  - ParentPortal Leave tab — date range + reason + optional file upload + history
+  - Fees page Term 1 card now shows "Includes Previous Year Due" badge if `previousYearDues.amount > 0`; orange banner above term cards highlights amount + source class
+  - Parent Portal Term 1 card shows "Prev Year Due" badge
+  - Fees → Concessions tab: Single/Bulk mode toggle; history limited to last 4 records
+  - AuthContext, Layout, App routes updated for `/approvals`
+  - api.js extended; Parent Portal tabs got `data-testid`
+- **Testing** — 100% pass on `iteration_10.json` (20/20 backend pytest + 3/3 frontend e2e)
 
 ### Earlier
 - Custom PDF invoices (High Five International design) with sequential receipts

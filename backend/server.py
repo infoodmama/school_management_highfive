@@ -807,36 +807,37 @@ async def promote_students(request: PromoteRequest):
     
     promoted_count = 0
     for student in students:
-        # Calculate pending dues per term
-        payments = await db.fee_payments.find({"studentId": student['id'], "status": {"$ne": "reverted"}}, {"_id": 0}).to_list(100)
-        paid_terms = {}
-        for p in payments:
-            if p.get('termNumber'):
-                k = p['termNumber']
-                paid_terms[k] = paid_terms.get(k, 0) + p['amount']
+        # Total paid: sum of all NON-reverted, NON-archived payments (terms + custom + concessions)
+        active_payments = await db.fee_payments.find(
+            {"studentId": student['id'], "status": {"$nin": ["reverted", "archived"]}}, {"_id": 0}
+        ).to_list(1000)
+        total_paid = sum(p.get('amount', 0) for p in active_payments)
+        
+        # Applicable custom fees for OLD class
+        old_custom_fees = await db.fee_types.find({
+            "$or": [
+                {"applicableClass": request.fromClass, "applicableSection": student.get('section', '')},
+                {"applicableClass": request.fromClass, "applicableSection": {"$in": [None, ""]}},
+                {"applicableClass": {"$in": [None, ""]}, "applicableSection": {"$in": [None, ""]}},
+            ]
+        }, {"_id": 0}).to_list(500)
+        total_custom = sum(cf.get('amount', 0) for cf in old_custom_fees)
         
         old_term1 = student.get('feeTerm1', 0)
         old_term2 = student.get('feeTerm2', 0)
         old_term3 = student.get('feeTerm3', 0)
-        pending1 = max(0, old_term1 - paid_terms.get(1, 0))
-        pending2 = max(0, old_term2 - paid_terms.get(2, 0))
-        pending3 = max(0, old_term3 - paid_terms.get(3, 0))
-        total_pending = pending1 + pending2 + pending3
+        total_expected = old_term1 + old_term2 + old_term3 + total_custom
+        total_due = max(0, total_expected - total_paid)
         
-        # Mark existing unpaid payments as reverted (so they don't count in new year)
-        # Keep them in DB for history but they won't affect fresh year calculations
+        # New year fee structure
+        new_term1 = total_due  # Previous year dues
+        new_term2 = old_term2  # Same base
+        new_term3 = old_term3 + 5000  # Base + 5000
         
-        # New year fees: ALL pending dues added to Term 1, new year starts fresh
-        # Term 1 = total pending from last year (as "Previous Year Dues"), Terms 2 & 3 remain same fresh fees
-        new_term1 = total_pending  # Previous year dues rolled into Term 1
-        new_term2 = old_term2  # Fresh Term 2 (same as before, will be new year's fee)
-        new_term3 = old_term3  # Fresh Term 3
-        
-        # Store previous year info for reference
         prev_year_dues = {
-            "totalDues": total_pending,
-            "term1Pending": pending1, "term2Pending": pending2, "term3Pending": pending3,
-            "fromClass": request.fromClass, "promotedOn": datetime.now(timezone.utc).isoformat()
+            "amount": total_due,
+            "fromClass": request.fromClass,
+            "promotedOn": datetime.now(timezone.utc).isoformat()
         }
         
         await db.students.update_one(
@@ -850,9 +851,14 @@ async def promote_students(request: PromoteRequest):
                 "academicYear": str(datetime.now().year)
             }}
         )
+        # Archive all existing payments so new year starts fresh (paid = 0)
+        await db.fee_payments.update_many(
+            {"studentId": student['id'], "status": {"$nin": ["reverted", "archived"]}},
+            {"$set": {"status": "archived"}}
+        )
         promoted_count += 1
     
-    return {"message": f"Promoted {promoted_count} students from {request.fromClass} to {request.toClass}. All pending dues carried to Term 1 of new class."}
+    return {"message": f"Promoted {promoted_count} students from {request.fromClass} to {request.toClass}. Previous year dues moved to Term 1, Term 3 increased by Rs.5000."}
 
 class BulkDeleteRequest(BaseModel):
     studentIds: List[str]
@@ -940,6 +946,7 @@ async def get_fee_status(studentClass: str, section: str):
         paid_terms = {}
         paid_custom = {}
         for p in payments:
+            if p.get('status') in ('reverted', 'archived'): continue
             if p.get('termNumber'):
                 k = f"term{p['termNumber']}"
                 paid_terms[k] = paid_terms.get(k, 0) + p['amount']
@@ -1019,7 +1026,7 @@ async def get_student_fees(student_code: str):
     payments = await db.fee_payments.find({"studentCode": student_code}, {"_id": 0}).to_list(100)
     paid_terms, paid_custom = {}, {}
     for p in payments:
-        if p.get('status') == 'reverted': continue  # Skip reverted payments
+        if p.get('status') in ('reverted', 'archived'): continue  # Skip reverted/archived payments
         if p.get('termNumber'):
             k = f"term{p['termNumber']}"
             paid_terms[k] = paid_terms.get(k, 0) + p['amount']
@@ -1089,7 +1096,7 @@ async def get_day_sheet(date: Optional[str] = None):
     if not date: date = datetime.now().strftime('%Y-%m-%d')
     start = datetime.fromisoformat(f"{date}T00:00:00")
     end = datetime.fromisoformat(f"{date}T23:59:59")
-    payments = await db.fee_payments.find({"paymentDate": {"$gte": start.isoformat(), "$lte": end.isoformat()}}, {"_id": 0}).to_list(1000)
+    payments = await db.fee_payments.find({"paymentDate": {"$gte": start.isoformat(), "$lte": end.isoformat()}, "status": {"$nin": ["reverted", "archived"]}}, {"_id": 0}).to_list(1000)
     total = sum(p['amount'] for p in payments)
     upi_total = sum(p['amount'] for p in payments if p['paymentMode'] == 'upi')
     cash_total = sum(p['amount'] for p in payments if p['paymentMode'] == 'cash')
@@ -1495,6 +1502,7 @@ async def get_student_detail(student_id: str):
     }, {"_id": 0}).to_list(500)
     paid_terms, paid_custom = {}, {}
     for p in payments:
+        if p.get('status') in ('reverted', 'archived'): continue
         if p.get('termNumber'): k = f"term{p['termNumber']}"; paid_terms[k] = paid_terms.get(k, 0) + p['amount']
         if p.get('feeTypeId'): paid_custom[p['feeTypeId']] = paid_custom.get(p['feeTypeId'], 0) + p['amount']
     # Inventory issued
@@ -1534,6 +1542,7 @@ async def parent_dashboard(student_id: str):
     }, {"_id": 0}).to_list(500)
     paid_terms, paid_custom = {}, {}
     for p in payments:
+        if p.get('status') in ('reverted', 'archived'): continue
         if p.get('termNumber'):
             k = f"term{p['termNumber']}"
             paid_terms[k] = paid_terms.get(k, 0) + p['amount']

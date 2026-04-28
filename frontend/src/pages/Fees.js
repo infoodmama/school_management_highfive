@@ -197,6 +197,19 @@ const Fees = () => {
                 </div>
               </div>
 
+              {/* Previous Year Due Banner */}
+              {studentData.student.previousYearDues?.amount > 0 && (
+                <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-2xl p-4">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-widest text-amber-700">Previous Year Due</p>
+                      <p className="text-2xl font-extrabold text-amber-900 mt-1">{'\u20B9'}{(studentData.student.previousYearDues.amount || 0).toLocaleString()}</p>
+                      <p className="text-xs text-amber-700 mt-1">From Class {studentData.student.previousYearDues.fromClass} - included in Term 1</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Term Fees */}
               <h3 className="text-lg font-bold text-slate-800">Term Fees</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -205,10 +218,14 @@ const Fees = () => {
                   const paid = isTermPaid(termNum);
                   const paidAmt = getTermPaid(termNum);
                   const pendingAmt = termAmount - paidAmt;
+                  const isPrevDue = termNum === 1 && (studentData.student.previousYearDues?.amount || 0) > 0;
                   return (
                     <div key={termNum} data-testid={`term-${termNum}-card`} className={`bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border p-6 ${paid ? 'border-emerald-300 bg-emerald-50/30' : paidAmt > 0 ? 'border-amber-300 bg-amber-50/20' : 'border-slate-100'}`}>
                       <div className="flex items-center justify-between mb-2">
-                        <h3 className="text-lg font-bold text-slate-900">Term {termNum}</h3>
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-900">Term {termNum}</h3>
+                          {isPrevDue && <span className="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">Includes Previous Year Due</span>}
+                        </div>
                         {paid ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white">PAID</span>
                           : paidAmt > 0 ? <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500 text-white">PARTIAL</span> : null}
                       </div>
