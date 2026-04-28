@@ -310,6 +310,30 @@ class LoginRequest(BaseModel):
     username: str
     password: str
 
+class Concession(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    studentId: str
+    studentCode: str
+    studentName: str
+    termNumber: Optional[int] = None
+    feeTypeId: Optional[str] = None
+    feeName: Optional[str] = None
+    concessionAmount: float
+    letterUrl: Optional[str] = None
+    requestedBy: str
+    status: str = "pending"  # pending, approved, rejected
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class ConcessionCreate(BaseModel):
+    studentCode: str
+    termNumber: Optional[int] = None
+    feeTypeId: Optional[str] = None
+    feeName: Optional[str] = None
+    concessionAmount: float
+    letterUrl: Optional[str] = None
+    requestedBy: str
+
 # ==================== WHATSAPP SERVICE ====================
 
 BASE_WA_URL = "https://crm.abhiit.com/api/meta/v19.0"
@@ -537,10 +561,10 @@ def generate_invoice_pdf(payment_data, student_data, school_settings=None):
 
 @api_router.post("/auth/login")
 async def login(data: LoginRequest):
-    # Check admin
+    # Check super admin
     if data.username == "admin" and data.password == "12345678":
-        return {"success": True, "user": {"name": "Admin", "username": "admin"}, "role": "admin"}
-    # Check staff
+        return {"success": True, "user": {"name": "Super Admin", "username": "admin"}, "role": "super_admin"}
+    # Check staff (teacher, office_staff, admin_role)
     staff = await db.staff.find_one({"username": data.username, "password": data.password}, {"_id": 0})
     if staff:
         return {"success": True, "user": {k: v for k, v in staff.items() if k != 'password'}, "role": staff['role']}
@@ -714,17 +738,19 @@ async def download_sample_csv():
     output.seek(0)
     return Response(content=output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=sample_students.csv"})
 
-@api_router.get("/students", response_model=List[Student])
-async def get_students(studentClass: Optional[str] = None, section: Optional[str] = None, search: Optional[str] = None):
+@api_router.get("/students")
+async def get_students(studentClass: Optional[str] = None, section: Optional[str] = None, search: Optional[str] = None, page: int = 1, limit: int = 50):
     query = {}
     if studentClass: query['studentClass'] = studentClass
     if section: query['section'] = section
     if search: query['$or'] = [{'studentName': {'$regex': search, '$options': 'i'}}, {'rollNo': {'$regex': search, '$options': 'i'}}, {'studentCode': {'$regex': search, '$options': 'i'}}]
-    students = await db.students.find(query, {"_id": 0}).to_list(1000)
+    total = await db.students.count_documents(query)
+    skip = (page - 1) * limit
+    students = await db.students.find(query, {"_id": 0}).skip(skip).limit(limit).to_list(limit)
     for s in students:
         if isinstance(s.get('createdAt'), str): s['createdAt'] = datetime.fromisoformat(s['createdAt'])
-        if 'studentCode' not in s: s['studentCode'] = s.get('rollNo', '')  # Backfill for old records
-    return students
+        if 'studentCode' not in s: s['studentCode'] = s.get('rollNo', '')
+    return {"students": students, "total": total, "page": page, "limit": limit, "totalPages": max(1, -(-total // limit))}
 
 @api_router.put("/students/{student_id}", response_model=Student)
 async def update_student(student_id: str, update_data: StudentUpdate):
@@ -744,8 +770,11 @@ async def delete_student(student_id: str):
 
 @api_router.post("/students/promote")
 async def promote_students(request: PromoteRequest):
-    result = await db.students.update_many({"studentClass": request.fromClass}, {"$set": {"studentClass": request.toClass}})
-    return {"message": f"Promoted {result.modified_count} students from {request.fromClass} to {request.toClass}"}
+    result = await db.students.update_many(
+        {"studentClass": request.fromClass},
+        {"$set": {"studentClass": request.toClass}, "$inc": {"feeTerm3": 5000}}
+    )
+    return {"message": f"Promoted {result.modified_count} students from {request.fromClass} to {request.toClass}. Added Rs.5000 to Term 3 for each."}
 
 class BulkDeleteRequest(BaseModel):
     studentIds: List[str]
@@ -912,6 +941,7 @@ async def get_student_fees(student_code: str):
     payments = await db.fee_payments.find({"studentCode": student_code}, {"_id": 0}).to_list(100)
     paid_terms, paid_custom = {}, {}
     for p in payments:
+        if p.get('status') == 'reverted': continue  # Skip reverted payments
         if p.get('termNumber'):
             k = f"term{p['termNumber']}"
             paid_terms[k] = paid_terms.get(k, 0) + p['amount']
@@ -1018,6 +1048,70 @@ async def export_fees(startDate: str, endDate: str, format: str = 'csv'):
 async def send_fee_reminders():
     settings_doc = await get_wa_settings()
     today = datetime.now().strftime('%Y-%m-%d')
+
+# ==================== FEE REVERT ====================
+
+@api_router.post("/fees/revert/{payment_id}")
+async def revert_fee_payment(payment_id: str):
+    payment = await db.fee_payments.find_one({"id": payment_id}, {"_id": 0})
+    if not payment: raise HTTPException(status_code=404, detail="Payment not found")
+    if payment.get('status') == 'reverted': raise HTTPException(status_code=400, detail="Payment already reverted")
+    await db.fee_payments.update_one({"id": payment_id}, {"$set": {"status": "reverted"}})
+    return {"message": "Payment reverted successfully"}
+
+# ==================== CONCESSION ROUTES ====================
+
+@api_router.post("/concessions")
+async def create_concession(data: ConcessionCreate):
+    student = await db.students.find_one({"studentCode": data.studentCode}, {"_id": 0})
+    if not student: raise HTTPException(status_code=404, detail="Student not found")
+    obj = Concession(**data.model_dump(), studentId=student['id'], studentName=student['studentName'])
+    doc = obj.model_dump()
+    doc['createdAt'] = doc['createdAt'].isoformat()
+    await db.concessions.insert_one(doc)
+    return obj
+
+@api_router.get("/concessions")
+async def get_concessions(status: Optional[str] = None):
+    query = {}
+    if status: query['status'] = status
+    return await db.concessions.find(query, {"_id": 0}).to_list(1000)
+
+@api_router.post("/concessions/{concession_id}/approve")
+async def approve_concession(concession_id: str):
+    con = await db.concessions.find_one({"id": concession_id}, {"_id": 0})
+    if not con: raise HTTPException(status_code=404, detail="Concession not found")
+    if con['status'] != 'pending': raise HTTPException(status_code=400, detail="Already processed")
+    # Apply concession: reduce fee amount
+    student = await db.students.find_one({"id": con['studentId']}, {"_id": 0})
+    if not student: raise HTTPException(status_code=404, detail="Student not found")
+    if con.get('termNumber'):
+        field = f"feeTerm{con['termNumber']}"
+        new_val = max(0, student.get(field, 0) - con['concessionAmount'])
+        await db.students.update_one({"id": con['studentId']}, {"$set": {field: new_val}})
+    elif con.get('feeTypeId'):
+        fee_type = await db.fee_types.find_one({"id": con['feeTypeId']}, {"_id": 0})
+        if fee_type:
+            new_amount = max(0, fee_type['amount'] - con['concessionAmount'])
+            # Store student-specific concession as a fee payment with negative/concession flag
+            await db.fee_payments.insert_one({
+                "id": str(uuid.uuid4()), "studentId": con['studentId'], "studentCode": con.get('studentCode', ''),
+                "rollNo": student.get('rollNo', ''), "studentName": student.get('studentName', ''),
+                "feeTypeId": con['feeTypeId'], "feeName": con.get('feeName', ''),
+                "amount": con['concessionAmount'], "paymentMode": "concession",
+                "receiptNumber": f"CON-{str(uuid.uuid4())[:6]}", "status": "concession",
+                "paymentDate": datetime.now(timezone.utc).isoformat(), "collectedBy": "System"
+            })
+    await db.concessions.update_one({"id": concession_id}, {"$set": {"status": "approved"}})
+    return {"message": "Concession approved and applied"}
+
+@api_router.post("/concessions/{concession_id}/reject")
+async def reject_concession(concession_id: str):
+    con = await db.concessions.find_one({"id": concession_id}, {"_id": 0})
+    if not con: raise HTTPException(status_code=404, detail="Concession not found")
+    if con['status'] != 'pending': raise HTTPException(status_code=400, detail="Already processed")
+    await db.concessions.update_one({"id": concession_id}, {"$set": {"status": "rejected"}})
+    return {"message": "Concession rejected"}
     upcoming = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
     fee_types = await db.fee_types.find({"dueDate": {"$ne": None, "$lte": upcoming}}, {"_id": 0}).to_list(500)
     sent_count = 0

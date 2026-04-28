@@ -5,17 +5,19 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 // Role access map
-// admin: everything
+// super_admin: everything
+// admin_role: everything except settings
 // teacher: students, attendance, calendar, homework
 // office_staff: students, fees, expenses, inventory
 const ROLE_ACCESS = {
-  admin: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff', '/settings'],
+  super_admin: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff', '/settings'],
+  admin_role: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff'],
   teacher: ['/students', '/attendance', '/calendar', '/homework'],
   office_staff: ['/students', '/fees', '/expenses', '/inventory'],
 };
 
 export const getDefaultRoute = (role) => {
-  if (role === 'admin') return '/';
+  if (role === 'super_admin' || role === 'admin_role') return '/';
   if (role === 'teacher') return '/students';
   if (role === 'office_staff') return '/students';
   return '/';

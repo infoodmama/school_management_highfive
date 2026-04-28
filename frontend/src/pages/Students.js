@@ -21,6 +21,9 @@ const Students = () => {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [selectedIds, setSelectedIds] = useState([]);
   const [filters, setFilters] = useState({ studentClass: '', section: '', search: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalStudents, setTotalStudents] = useState(0);
   const [formData, setFormData] = useState({
     studentCode: '', studentName: '', rollNo: '', studentClass: '', section: '',
     fatherName: '', motherName: '', mobile: '', address: '',
@@ -35,15 +38,17 @@ const Students = () => {
   const loadStudents = useCallback(async () => {
     try {
       setLoading(true);
-      const params = {};
+      const params = { page: currentPage, limit: 50 };
       if (filters.studentClass) params.studentClass = filters.studentClass;
       if (filters.section) params.section = filters.section;
       if (filters.search) params.search = filters.search;
       const response = await api.getStudents(params);
-      setStudents(response.data);
+      setStudents(response.data.students || response.data);
+      setTotalPages(response.data.totalPages || 1);
+      setTotalStudents(response.data.total || 0);
     } catch (error) { toast.error('Failed to load students'); }
     finally { setLoading(false); }
-  }, [filters]);
+  }, [filters, currentPage]);
 
   useEffect(() => { loadClasses(); }, [loadClasses]);
   useEffect(() => { loadStudents(); }, [loadStudents]);
@@ -323,6 +328,22 @@ const Students = () => {
           </div>
         )}
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-4">
+          <p className="text-sm text-slate-600 font-medium">Showing {((currentPage - 1) * 50) + 1}-{Math.min(currentPage * 50, totalStudents)} of {totalStudents}</p>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setCurrentPage(p => p - 1)} className="rounded-xl font-bold">Previous</Button>
+            {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+              const pageNum = currentPage <= 3 ? i + 1 : currentPage + i - 2;
+              if (pageNum < 1 || pageNum > totalPages) return null;
+              return <Button key={pageNum} variant={pageNum === currentPage ? 'default' : 'outline'} size="sm" onClick={() => setCurrentPage(pageNum)} className={`rounded-xl font-bold ${pageNum === currentPage ? 'bg-sky-500 text-white' : ''}`}>{pageNum}</Button>;
+            })}
+            <Button variant="outline" size="sm" disabled={currentPage >= totalPages} onClick={() => setCurrentPage(p => p + 1)} className="rounded-xl font-bold">Next</Button>
+          </div>
+        </div>
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={showEditDialog} onOpenChange={(open) => { setShowEditDialog(open); if (!open) resetForm(); }}>

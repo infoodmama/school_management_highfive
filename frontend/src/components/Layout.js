@@ -28,7 +28,8 @@ const Layout = () => {
   const handleLogout = () => { logout(); navigate('/'); };
 
   const getRoleLabel = () => {
-    if (role === 'admin') return 'Administrator';
+    if (role === 'super_admin') return 'Super Admin';
+    if (role === 'admin_role') return 'Admin';
     if (role === 'teacher') return 'Teacher';
     if (role === 'office_staff') return 'Office Staff';
     return '';

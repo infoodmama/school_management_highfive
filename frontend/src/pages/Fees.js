@@ -37,6 +37,10 @@ const Fees = () => {
   const [feeStatusSection, setFeeStatusSection] = useState('');
   const [feeStatusData, setFeeStatusData] = useState(null);
 
+  // Concession state
+  const [concessions, setConcessions] = useState([]);
+  const [conForm, setConForm] = useState({ studentCode: '', termNumber: '', feeTypeId: '', feeName: '', concessionAmount: '', letterUrl: '' });
+
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
   }, []);
@@ -45,7 +49,9 @@ const Fees = () => {
     try { const r = await api.getFeeTypes(); setFeeTypes(r.data); } catch (e) { /* ignore */ }
   }, []);
 
-  useEffect(() => { loadClasses(); loadFeeTypes(); }, [loadClasses, loadFeeTypes]);
+  useEffect(() => { loadClasses(); loadFeeTypes(); loadConcessions(); }, [loadClasses, loadFeeTypes]);
+
+  const loadConcessions = async () => { try { const r = await api.getConcessions(); setConcessions(r.data); } catch (e) { /* ignore */ } };
 
   const getSections = (cls) => { const f = classes.find((c) => c.className === cls); return f ? f.sections : []; };
 
@@ -164,6 +170,7 @@ const Fees = () => {
           <TabsTrigger data-testid="fee-types-tab" value="feetypes" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Plus className="w-4 h-4 mr-2" />Fee Types</TabsTrigger>
           <TabsTrigger data-testid="daysheet-tab" value="daysheet" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Receipt className="w-4 h-4 mr-2" />Day Sheet</TabsTrigger>
           <TabsTrigger data-testid="fee-status-tab" value="feestatus" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><Search className="w-4 h-4 mr-2" />Fee Status</TabsTrigger>
+          <TabsTrigger data-testid="concession-tab" value="concession" className="data-[state=active]:bg-white data-[state=active]:shadow-sm rounded-lg px-6 py-2 font-bold"><DollarSign className="w-4 h-4 mr-2" />Concessions</TabsTrigger>
         </TabsList>
 
         {/* Collect Payment */}
@@ -246,26 +253,32 @@ const Fees = () => {
                   <h2 className="text-xl font-bold text-slate-800 mb-4">Transaction History</h2>
                   <div className="space-y-3">
                     {studentData.payments.slice().reverse().map((p) => (
-                      <div key={p.id} className="p-4 bg-slate-50 rounded-xl">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-3">
+                      <div key={p.id} className={`p-4 rounded-xl ${p.status === 'reverted' ? 'bg-rose-50 opacity-60' : 'bg-slate-50'}`}>
+                        <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-slate-900">{p.receiptNumber}</span>
                             <span className="text-sm text-slate-600">{p.termNumber ? `Term ${p.termNumber}` : (p.feeName || 'Custom')}</span>
-                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${p.paymentMode === 'upi' ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>{p.paymentMode.toUpperCase()}</span>
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${p.paymentMode === 'upi' ? 'bg-sky-100 text-sky-700' : p.paymentMode === 'concession' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>{p.paymentMode.toUpperCase()}</span>
+                            {p.status === 'reverted' && <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700">REVERTED</span>}
                           </div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-emerald-600 text-lg">{'\u20B9'}{p.amount.toLocaleString()}</span>
+                            <span className={`font-bold text-lg ${p.status === 'reverted' ? 'text-slate-400 line-through' : 'text-emerald-600'}`}>{'\u20B9'}{p.amount.toLocaleString()}</span>
                             {p.paymentMode === 'upi' && p.upiScreenshot && (
                               <button onClick={() => setUpiPreviewUrl(p.upiScreenshot)} data-testid={`view-upi-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-xl font-bold text-xs transition-colors">
                                 <Eye className="w-3 h-3" />UPI
                               </button>
                             )}
-                            <a href={api.getInvoiceUrl(p.id)} target="_blank" rel="noopener noreferrer" data-testid={`download-invoice-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-xl font-bold text-xs transition-colors">
-                              <Download className="w-3 h-3" />Invoice
-                            </a>
+                            {p.status !== 'reverted' && p.paymentMode !== 'concession' && (
+                              <a href={api.getInvoiceUrl(p.id)} target="_blank" rel="noopener noreferrer" data-testid={`download-invoice-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-xl font-bold text-xs transition-colors">
+                                <Download className="w-3 h-3" />Invoice
+                              </a>
+                            )}
+                            {p.status !== 'reverted' && p.paymentMode !== 'concession' && (
+                              <button onClick={async () => { if (!window.confirm('Revert this payment?')) return; try { await api.revertPayment(p.id); toast.success('Payment reverted'); handleSearchStudent(); } catch (e) { toast.error('Failed to revert'); } }} data-testid={`revert-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-xl font-bold text-xs transition-colors">Revert</button>
+                            )}
                           </div>
                         </div>
-                        <p className="text-xs text-slate-500">{typeof p.paymentDate === 'string' ? p.paymentDate.slice(0, 10) : ''}</p>
+                        <p className="text-xs text-slate-500">{typeof p.paymentDate === 'string' ? p.paymentDate.slice(0, 10) : ''}{p.collectedBy ? ` | By: ${p.collectedBy}` : ''}</p>
                       </div>
                     ))}
                   </div>
@@ -544,6 +557,83 @@ const Fees = () => {
               </table>
             </div>
           )}
+        </TabsContent>
+
+        {/* Concessions Tab */}
+        <TabsContent value="concession" className="space-y-6">
+          {/* Request Concession */}
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-4 sm:p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Request Concession</h2>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const data = { ...conForm, concessionAmount: parseFloat(conForm.concessionAmount), requestedBy: user?.name || user?.username || 'Staff' };
+                if (conForm.termNumber) { data.termNumber = parseInt(conForm.termNumber); data.feeTypeId = null; data.feeName = null; }
+                else if (conForm.feeTypeId) { data.termNumber = null; const ft = feeTypes.find(f => f.id === conForm.feeTypeId); data.feeName = ft?.feeName || ''; }
+                await api.createConcession(data);
+                toast.success('Concession request submitted');
+                setConForm({ studentCode: '', termNumber: '', feeTypeId: '', feeName: '', concessionAmount: '', letterUrl: '' });
+                loadConcessions();
+              } catch (error) { toast.error(error.response?.data?.detail || 'Failed'); }
+            }} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div><Label>Student ID *</Label><Input required value={conForm.studentCode} onChange={(e) => setConForm({ ...conForm, studentCode: e.target.value })} className="rounded-xl h-12" placeholder="e.g., ADM001" /></div>
+                <div><Label>Term (or leave blank for custom fee)</Label>
+                  <Select value={conForm.termNumber || '_none'} onValueChange={(v) => setConForm({ ...conForm, termNumber: v === '_none' ? '' : v, feeTypeId: '' })}>
+                    <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Term" /></SelectTrigger>
+                    <SelectContent><SelectItem value="_none">-- Custom Fee --</SelectItem><SelectItem value="1">Term 1</SelectItem><SelectItem value="2">Term 2</SelectItem><SelectItem value="3">Term 3</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                {!conForm.termNumber && (
+                  <div><Label>Custom Fee Type</Label>
+                    <Select value={conForm.feeTypeId || '_none'} onValueChange={(v) => setConForm({ ...conForm, feeTypeId: v === '_none' ? '' : v })}>
+                      <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Fee" /></SelectTrigger>
+                      <SelectContent><SelectItem value="_none">-- Select --</SelectItem>{feeTypes.map(ft => <SelectItem key={ft.id} value={ft.id}>{ft.feeName}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div><Label>Concession Amount *</Label><Input type="number" required value={conForm.concessionAmount} onChange={(e) => setConForm({ ...conForm, concessionAmount: e.target.value })} className="rounded-xl h-12" placeholder="Amount" /></div>
+              </div>
+              <div><Label>Upload Letter (Optional)</Label>
+                <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+                  const file = e.target.files[0]; if (!file) return;
+                  try { const r = await api.uploadFile(file); setConForm({ ...conForm, letterUrl: r.data.url }); toast.success('Uploaded'); } catch (err) { toast.error('Failed'); }
+                }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700" />
+                {conForm.letterUrl && <p className="text-sm text-emerald-600 font-medium mt-1">Letter uploaded</p>}
+              </div>
+              <div className="flex justify-end"><Button type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95">Submit Request</Button></div>
+            </form>
+          </div>
+
+          {/* Concession List */}
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-4 sm:p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Concession Requests</h2>
+            {concessions.length === 0 ? <p className="text-slate-400 text-center py-8">No concession requests</p> : (
+              <div className="space-y-3">
+                {concessions.slice().reverse().map((c) => (
+                  <div key={c.id} className={`p-4 rounded-xl border ${c.status === 'approved' ? 'border-emerald-200 bg-emerald-50/30' : c.status === 'rejected' ? 'border-rose-200 bg-rose-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                      <div>
+                        <p className="font-bold text-slate-900">{c.studentCode} - {c.studentName}</p>
+                        <p className="text-sm text-slate-600">{c.termNumber ? `Term ${c.termNumber}` : (c.feeName || 'Custom')} | Amount: {'\u20B9'}{c.concessionAmount.toLocaleString()}</p>
+                        <p className="text-xs text-slate-500">Requested by: {c.requestedBy}</p>
+                        {c.letterUrl && <a href={c.letterUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-sky-600 font-bold hover:underline">View Letter</a>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${c.status === 'approved' ? 'bg-emerald-500 text-white' : c.status === 'rejected' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-white'}`}>{c.status.toUpperCase()}</span>
+                        {c.status === 'pending' && (
+                          <>
+                            <Button size="sm" onClick={async () => { try { await api.approveConcession(c.id); toast.success('Approved'); loadConcessions(); } catch (e) { toast.error('Failed'); } }} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl text-xs">Approve</Button>
+                            <Button size="sm" variant="outline" onClick={async () => { try { await api.rejectConcession(c.id); toast.success('Rejected'); loadConcessions(); } catch (e) { toast.error('Failed'); } }} className="border-rose-300 text-rose-600 hover:bg-rose-50 font-bold rounded-xl text-xs">Reject</Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </TabsContent>
       </Tabs>
     </div>

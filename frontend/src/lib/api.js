@@ -108,6 +108,15 @@ export const api = {
   // Fee Reminders
   sendFeeReminders: () => axios.post(`${API}/fees/send-reminders`),
 
+  // Fee Revert
+  revertPayment: (paymentId) => axios.post(`${API}/fees/revert/${paymentId}`),
+
+  // Concessions
+  getConcessions: (params) => axios.get(`${API}/concessions`, { params }),
+  createConcession: (data) => axios.post(`${API}/concessions`, data),
+  approveConcession: (id) => axios.post(`${API}/concessions/${id}/approve`),
+  rejectConcession: (id) => axios.post(`${API}/concessions/${id}/reject`),
+
   // Invoice
   getInvoiceUrl: (paymentId) => `${API}/fees/invoice/${paymentId}`,
 };

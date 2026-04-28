@@ -69,7 +69,7 @@ const StaffPage = () => {
               <div><Label>Role *</Label>
                 <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v })}>
                   <SelectTrigger className="rounded-xl h-12"><SelectValue /></SelectTrigger>
-                  <SelectContent><SelectItem value="teacher">Teacher</SelectItem><SelectItem value="office_staff">Office Staff</SelectItem></SelectContent>
+                  <SelectContent><SelectItem value="teacher">Teacher</SelectItem><SelectItem value="office_staff">Office Staff</SelectItem><SelectItem value="admin_role">Admin</SelectItem></SelectContent>
                 </Select>
               </div>
               <div><Label>Mobile *</Label><Input required value={form.mobile} onChange={(e) => setForm({ ...form, mobile: e.target.value })} className="rounded-xl h-12" /></div>
@@ -103,7 +103,7 @@ const StaffPage = () => {
                 {staff.map((s) => (
                   <TableRow key={s.id} className="hover:bg-slate-50/80">
                     <TableCell className="font-semibold text-slate-900">{s.name}</TableCell>
-                    <TableCell><span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${s.role === 'teacher' ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'}`}>{s.role === 'teacher' ? 'Teacher' : 'Office Staff'}</span></TableCell>
+                    <TableCell><span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${s.role === 'teacher' ? 'bg-sky-100 text-sky-700' : s.role === 'admin_role' ? 'bg-purple-100 text-purple-700' : 'bg-amber-100 text-amber-700'}`}>{s.role === 'teacher' ? 'Teacher' : s.role === 'admin_role' ? 'Admin' : 'Office Staff'}</span></TableCell>
                     <TableCell className="text-slate-600">{s.mobile}</TableCell>
                     <TableCell className="text-slate-600">{s.subject || '-'}</TableCell>
                     <TableCell className="font-medium text-slate-700">{s.username}</TableCell>
