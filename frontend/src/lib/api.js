@@ -29,6 +29,9 @@ export const api = {
   deleteStudent: (id) => axios.delete(`${API}/students/${id}`),
   bulkDeleteStudents: (studentIds) => axios.post(`${API}/students/bulk-delete`, { studentIds }),
   promoteStudents: (data) => axios.post(`${API}/students/promote`, data),
+  promoteStudentsPreview: (data) => axios.post(`${API}/students/promote-preview`, data),
+  promoteSingleStudentPreview: (id, data) => axios.post(`${API}/students/${id}/promote-preview`, data),
+  promoteSingleStudent: (id, data) => axios.post(`${API}/students/${id}/promote`, data),
 
   // Attendance
   markAttendance: (data) => axios.post(`${API}/attendance`, data),

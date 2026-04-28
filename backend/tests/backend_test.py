@@ -178,85 +178,207 @@ class TestBulkConcessions:
         assert test_student["studentCode"] in codes
 
 
-# ==================== Promote Students (fee carryover) ====================
-class TestPromoteFeeCarryover:
-    def test_promote_carryover_to_term1(self, api_client):
-        # Create a student in isolated class with known fees & one payment to create pending
-        suffix = uuid.uuid4().hex[:6].upper()
-        code = f"TSTPR{suffix}"
-        payload = {
-            "studentCode": code,
-            "studentName": f"TEST_PromoteStudent_{suffix}",
-            "studentClass": f"TEST_FROM_{suffix}",
-            "section": "A",
-            "rollNo": f"RP{suffix}",
-            "mobile": "9888888888",
-            "parentName": "TestParent",
-            "fatherName": "TestFather",
-            "motherName": "TestMother",
-            "address": "TEST_address",
-            "feeTerm1": 1000.0,
-            "feeTerm2": 2000.0,
-            "feeTerm3": 3000.0,
-        }
-        cr = api_client.post(f"{API}/students", json=payload)
-        assert cr.status_code in (200, 201), cr.text
-        stu = cr.json()
+# ==================== Promote Students (fee carryover - NEW FORMULA) ====================
+# Formula:
+#   total_due = (T1+T2+T3+customFees) - paid
+#   new_T1 = old_T1 + total_due
+#   new_T2 = old_T2
+#   new_T3 = old_T3 + 5000
+#   payments archived; promotionHistory appended (NOT overwritten)
+
+def _create_promote_student(api_client, suffix=None):
+    suffix = suffix or uuid.uuid4().hex[:6].upper()
+    code = f"TSTPR{suffix}"
+    payload = {
+        "studentCode": code,
+        "studentName": f"TEST_PromoteStudent_{suffix}",
+        "studentClass": f"TEST_FROM_{suffix}",
+        "section": "A",
+        "rollNo": f"RP{suffix}",
+        "mobile": "9888888888",
+        "parentName": "TestParent", "fatherName": "TestFather",
+        "motherName": "TestMother", "address": "TEST_address",
+        "feeTerm1": 1000.0, "feeTerm2": 2000.0, "feeTerm3": 3000.0,
+    }
+    cr = api_client.post(f"{API}/students", json=payload)
+    assert cr.status_code in (200, 201), cr.text
+    return cr.json(), payload
+
+
+class TestPromoteBulk:
+    def test_bulk_preview_then_commit(self, api_client):
+        stu, payload = _create_promote_student(api_client)
         try:
-            # Pay 400 in term 1 (so term1 pending = 600)
-            pay = {
-                "studentId": stu["id"],
-                "studentCode": code,
-                "rollNo": stu.get("rollNo", f"RP{suffix}"),
-                "studentName": stu["studentName"],
-                "termNumber": 1,
-                "amount": 400.0,
-                "paymentMode": "cash",
+            # Pay 400 in term 1
+            pr = api_client.post(f"{API}/fees/payment", json={
+                "studentId": stu["id"], "studentCode": stu["studentCode"],
+                "rollNo": stu["rollNo"], "studentName": stu["studentName"],
+                "termNumber": 1, "amount": 400.0, "paymentMode": "cash",
                 "collectedBy": "TEST_admin",
-            }
-            pr = api_client.post(f"{API}/fees/payment", json=pay)
+            })
             assert pr.status_code in (200, 201), pr.text
 
-            # Promote
             from_class = payload["studentClass"]
-            to_class = f"TEST_TO_{suffix}"
-            pm = api_client.post(
-                f"{API}/students/promote",
-                json={"fromClass": from_class, "toClass": to_class},
-            )
-            assert pm.status_code == 200, pm.text
-            assert "Promoted" in pm.json().get("message", "")
+            to_class = f"TEST_TO_{uuid.uuid4().hex[:6].upper()}"
 
-            # Verify student state post-promotion
-            g = api_client.get(f"{API}/students", params={"limit": 50, "studentClass": to_class})
-            assert g.status_code == 200
-            # Fallback to fetch by id directly via list with search
+            # ---- Preview (should NOT commit) ----
+            pv = api_client.post(f"{API}/students/promote-preview",
+                                 json={"fromClass": from_class, "toClass": to_class})
+            assert pv.status_code == 200, pv.text
+            pvd = pv.json()
+            assert pvd["studentCount"] == 1
+            row = pvd["preview"][0]
+            assert row["studentId"] == stu["id"]
+            assert row["totalPaid"] == 400.0
+            # totalDue = (1000+2000+3000+0) - 400 = 5600
+            assert row["totalDue"] == 5600.0
+            assert row["totalExpected"] == 6000.0
+            assert row["oldFees"]["term1"] == 1000.0
+            assert row["oldFees"]["term2"] == 2000.0
+            assert row["oldFees"]["term3"] == 3000.0
+            # NEW formula: T1 = 1000 + 5600 = 6600, T2 = 2000, T3 = 3000+5000 = 8000
+            assert row["newFees"]["term1"] == 6600.0, f"new T1={row['newFees']['term1']}"
+            assert row["newFees"]["term2"] == 2000.0
+            assert row["newFees"]["term3"] == 8000.0
+
+            # Confirm preview did NOT commit (student still in fromClass)
             sg = api_client.get(f"{API}/students", params={"limit": 1000})
-            assert sg.status_code == 200
-            all_students = sg.json().get("students", [])
-            found = next((s for s in all_students if s["id"] == stu["id"]), None)
-            assert found is not None, "Student not found post-promotion"
-            assert found["studentClass"] == to_class
-            # Carryover: pending1=600, pending2=2000, pending3=3000 -> total 5600 in new Term1
-            assert found["feeTerm1"] == 5600.0, f"Expected 5600 in new term1, got {found['feeTerm1']}"
-            # Term2 and Term3 remain as old term2/term3 (fresh year)
-            assert found["feeTerm2"] == 2000.0
-            assert found["feeTerm3"] == 3000.0
-            # previousYearDues info present
-            pyd = found.get("previousYearDues")
-            assert pyd and pyd.get("totalDues") == 5600.0
+            found = next((s for s in sg.json().get("students", []) if s["id"] == stu["id"]), None)
+            assert found is not None
+            assert found["studentClass"] == from_class, "Preview must NOT commit"
+
+            # ---- Commit ----
+            pm = api_client.post(f"{API}/students/promote",
+                                 json={"fromClass": from_class, "toClass": to_class})
+            assert pm.status_code == 200, pm.text
+
+            # Verify state
+            sg2 = api_client.get(f"{API}/students", params={"limit": 1000})
+            found2 = next((s for s in sg2.json().get("students", []) if s["id"] == stu["id"]), None)
+            assert found2["studentClass"] == to_class
+            assert found2["feeTerm1"] == 6600.0
+            assert found2["feeTerm2"] == 2000.0
+            assert found2["feeTerm3"] == 8000.0
+            pyd = found2.get("previousYearDues")
+            assert pyd, "previousYearDues should exist"
+            assert pyd.get("amount") == 5600.0
             assert pyd.get("fromClass") == from_class
+
+            # Verify payments archived (active should be empty now)
+            d = api_client.get(f"{API}/students/{stu['id']}/detail")
+            assert d.status_code == 200
+            dj = d.json()
+            active_pay = [p for p in dj.get("payments", []) if p.get("status") not in ("reverted", "archived")]
+            assert len(active_pay) == 0, "Payments should be archived after promotion"
+            # promotionHistory length 1
+            assert len(dj.get("promotionHistory", [])) == 1
+            entry = dj["promotionHistory"][0]
+            assert entry["fromClass"] == from_class
+            assert entry["toClass"] == to_class
+            assert entry["totalDue"] == 5600.0
+            assert entry["totalPaid"] == 400.0
+            assert entry["newFees"]["term1"] == 6600.0
         finally:
-            try:
-                api_client.delete(f"{API}/students/{stu['id']}")
-            except Exception:
-                pass
+            try: api_client.delete(f"{API}/students/{stu['id']}")
+            except Exception: pass
 
     def test_promote_no_students(self, api_client):
         r = api_client.post(f"{API}/students/promote", json={
             "fromClass": f"NONEXISTENT_{uuid.uuid4().hex[:6]}", "toClass": "X"
         })
         assert r.status_code == 404
+
+    def test_promote_preview_no_students(self, api_client):
+        r = api_client.post(f"{API}/students/promote-preview", json={
+            "fromClass": f"NONEXISTENT_{uuid.uuid4().hex[:6]}", "toClass": "X"
+        })
+        assert r.status_code == 404
+
+
+class TestPromoteSingle:
+    def test_single_preview_and_commit_and_history_append(self, api_client):
+        stu, payload = _create_promote_student(api_client)
+        try:
+            # Pay 400 term 1
+            pr = api_client.post(f"{API}/fees/payment", json={
+                "studentId": stu["id"], "studentCode": stu["studentCode"],
+                "rollNo": stu["rollNo"], "studentName": stu["studentName"],
+                "termNumber": 1, "amount": 400.0, "paymentMode": "cash",
+                "collectedBy": "TEST_admin",
+            })
+            assert pr.status_code in (200, 201)
+
+            to_class_1 = f"TEST_TO1_{uuid.uuid4().hex[:6].upper()}"
+            to_class_2 = f"TEST_TO2_{uuid.uuid4().hex[:6].upper()}"
+
+            # Single preview
+            sp = api_client.post(f"{API}/students/{stu['id']}/promote-preview",
+                                 json={"toClass": to_class_1})
+            assert sp.status_code == 200, sp.text
+            spd = sp.json()
+            assert spd["studentId"] == stu["id"]
+            assert spd["totalPaid"] == 400.0
+            assert spd["totalDue"] == 5600.0
+            assert spd["oldFees"]["term1"] == 1000.0
+            assert spd["newFees"]["term1"] == 6600.0
+            assert spd["newFees"]["term2"] == 2000.0
+            assert spd["newFees"]["term3"] == 8000.0
+
+            # Verify preview did NOT commit
+            sg = api_client.get(f"{API}/students", params={"limit": 1000})
+            f = next((s for s in sg.json()["students"] if s["id"] == stu["id"]), None)
+            assert f["studentClass"] == payload["studentClass"]
+
+            # Single commit (1st promotion)
+            cm = api_client.post(f"{API}/students/{stu['id']}/promote",
+                                 json={"toClass": to_class_1})
+            assert cm.status_code == 200, cm.text
+
+            # Detail check after 1st promotion
+            d1 = api_client.get(f"{API}/students/{stu['id']}/detail")
+            dj1 = d1.json()
+            assert dj1["student"]["studentClass"] == to_class_1
+            assert dj1["student"]["feeTerm1"] == 6600.0
+            assert dj1["student"]["feeTerm3"] == 8000.0
+            assert len(dj1["promotionHistory"]) == 1
+
+            # Pay 100 in term 1 of new class (so 2nd promotion has total_due = 6600+2000+8000 - 100 = 16500)
+            pr2 = api_client.post(f"{API}/fees/payment", json={
+                "studentId": stu["id"], "studentCode": stu["studentCode"],
+                "rollNo": stu["rollNo"], "studentName": stu["studentName"],
+                "termNumber": 1, "amount": 100.0, "paymentMode": "cash",
+                "collectedBy": "TEST_admin",
+            })
+            assert pr2.status_code in (200, 201)
+
+            # 2nd promotion (history must APPEND, not overwrite)
+            cm2 = api_client.post(f"{API}/students/{stu['id']}/promote",
+                                  json={"toClass": to_class_2})
+            assert cm2.status_code == 200
+
+            d2 = api_client.get(f"{API}/students/{stu['id']}/detail")
+            dj2 = d2.json()
+            assert dj2["student"]["studentClass"] == to_class_2
+            # new_T1 = 6600 + (16500) = 23100, T2 = 2000, T3 = 8000+5000 = 13000
+            assert dj2["student"]["feeTerm1"] == 23100.0, f"got {dj2['student']['feeTerm1']}"
+            assert dj2["student"]["feeTerm2"] == 2000.0
+            assert dj2["student"]["feeTerm3"] == 13000.0
+            # promotionHistory must have 2 entries (append!)
+            ph = dj2["promotionHistory"]
+            assert len(ph) == 2, f"Expected 2 history entries, got {len(ph)}"
+            assert ph[0]["toClass"] == to_class_1
+            assert ph[1]["toClass"] == to_class_2
+            assert ph[1]["fromClass"] == to_class_1
+            assert ph[1]["totalDue"] == 16500.0
+        finally:
+            try: api_client.delete(f"{API}/students/{stu['id']}")
+            except Exception: pass
+
+    def test_single_promote_404(self, api_client):
+        r = api_client.post(f"{API}/students/nonexistent-xyz/promote", json={"toClass": "X"})
+        assert r.status_code == 404
+        r2 = api_client.post(f"{API}/students/nonexistent-xyz/promote-preview", json={"toClass": "X"})
+        assert r2.status_code == 404
 
 
 # ==================== Send Reminders (regression) ====================

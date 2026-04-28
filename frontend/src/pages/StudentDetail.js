@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, ClipboardCheck, DollarSign, Package } from 'lucide-react';
+import { ArrowLeft, User, ClipboardCheck, DollarSign, Package, TrendingUp } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -181,6 +181,37 @@ const StudentDetail = () => {
                   <p className="font-bold text-slate-900">{iss.itemName}</p>
                   <p className="font-bold text-indigo-600">Qty: {iss.quantity}</p>
                   <p className="text-slate-600">{iss.date}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Promotion History */}
+      {promotionHistory && promotionHistory.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6" data-testid="promotion-history-section">
+          <div className="flex items-center gap-3 mb-4">
+            <TrendingUp className="w-6 h-6 text-amber-600" />
+            <h2 className="text-xl font-bold text-slate-800">Promotion History</h2>
+            <span className="ml-auto text-xs font-bold text-slate-500">{promotionHistory.length} promotion(s)</span>
+          </div>
+          <div className="space-y-3">
+            {promotionHistory.slice().reverse().map((h, i) => (
+              <div key={i} className="border border-amber-200 bg-gradient-to-r from-amber-50/50 to-orange-50/50 rounded-xl p-4">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-slate-200 text-slate-700">Class {h.fromClass}</span>
+                    <ArrowLeft className="w-3 h-3 rotate-180 text-amber-600" />
+                    <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700">Class {h.toClass}</span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-medium">{typeof h.promotedOn === 'string' ? h.promotedOn.slice(0, 10) : ''}</p>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                  <div className="bg-white rounded-lg p-2 border border-slate-100"><p className="text-[10px] font-bold uppercase text-slate-400">Last Yr Paid</p><p className="font-bold text-emerald-600">{'\u20B9'}{(h.totalPaid || 0).toLocaleString()}</p></div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-100"><p className="text-[10px] font-bold uppercase text-slate-400">Carried Forward</p><p className="font-bold text-rose-600">{'\u20B9'}{(h.totalDue || 0).toLocaleString()}</p></div>
+                  <div className="bg-white rounded-lg p-2 border border-slate-100"><p className="text-[10px] font-bold uppercase text-slate-400">Old T1/T2/T3</p><p className="font-bold text-slate-700 text-xs">{(h.oldFees?.term1)||0}/{(h.oldFees?.term2)||0}/{(h.oldFees?.term3)||0}</p></div>
+                  <div className="bg-white rounded-lg p-2 border border-emerald-200"><p className="text-[10px] font-bold uppercase text-emerald-500">New T1/T2/T3</p><p className="font-bold text-emerald-700 text-xs">{(h.newFees?.term1)||0}/{(h.newFees?.term2)||0}/{(h.newFees?.term3)||0}</p></div>
                 </div>
               </div>
             ))}

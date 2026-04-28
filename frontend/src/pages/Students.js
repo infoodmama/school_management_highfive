@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Plus, Upload, Download, Search, Edit, Trash2, TrendingUp, Filter, Eye } from 'lucide-react';
+import { Plus, Upload, Download, Search, Edit, Trash2, TrendingUp, Filter, Eye, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -30,6 +30,13 @@ const Students = () => {
     feeTerm1: '', feeTerm2: '', feeTerm3: '', parentUsername: '', parentPassword: '',
   });
   const [promoteData, setPromoteData] = useState({ fromClass: '', toClass: '' });
+  const [promotePreview, setPromotePreview] = useState(null); // bulk preview
+  const [previewLoading, setPreviewLoading] = useState(false);
+  // Single-student promotion
+  const [showSinglePromoteDialog, setShowSinglePromoteDialog] = useState(false);
+  const [singlePromoteStudent, setSinglePromoteStudent] = useState(null);
+  const [singlePromoteToClass, setSinglePromoteToClass] = useState('');
+  const [singlePromotePreview, setSinglePromotePreview] = useState(null);
 
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
@@ -134,13 +141,63 @@ const Students = () => {
     setSelectedIds((prev) => prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]);
   };
 
-  const handlePromote = async (e) => {
-    e.preventDefault();
+  const handleLoadPromotePreview = async () => {
+    if (!promoteData.fromClass || !promoteData.toClass) { toast.error('Select both classes'); return; }
+    if (promoteData.fromClass === promoteData.toClass) { toast.error('From and To classes must be different'); return; }
+    try {
+      setPreviewLoading(true);
+      const r = await api.promoteStudentsPreview(promoteData);
+      setPromotePreview(r.data);
+    } catch (e) { toast.error(e.response?.data?.detail || 'Failed to load preview'); }
+    finally { setPreviewLoading(false); }
+  };
+
+  const handleConfirmBulkPromote = async () => {
     try {
       const response = await api.promoteStudents(promoteData);
       toast.success(response.data.message);
-      setShowPromoteDialog(false); setPromoteData({ fromClass: '', toClass: '' }); loadStudents();
+      setShowPromoteDialog(false);
+      setPromoteData({ fromClass: '', toClass: '' });
+      setPromotePreview(null);
+      loadStudents();
     } catch (error) { toast.error('Failed to promote students'); }
+  };
+
+  const openSinglePromoteDialog = (student) => {
+    setSinglePromoteStudent(student);
+    setSinglePromoteToClass('');
+    setSinglePromotePreview(null);
+    setShowSinglePromoteDialog(true);
+  };
+
+  const handleLoadSinglePreview = async () => {
+    if (!singlePromoteToClass) { toast.error('Select target class'); return; }
+    if (singlePromoteToClass === singlePromoteStudent.studentClass) { toast.error('Target class must be different'); return; }
+    try {
+      const r = await api.promoteSingleStudentPreview(singlePromoteStudent.id, { toClass: singlePromoteToClass });
+      setSinglePromotePreview(r.data);
+    } catch (e) { toast.error('Failed to load preview'); }
+  };
+
+  const handleConfirmSinglePromote = async () => {
+    try {
+      const r = await api.promoteSingleStudent(singlePromoteStudent.id, { toClass: singlePromoteToClass });
+      toast.success(r.data.message);
+      setShowSinglePromoteDialog(false);
+      setSinglePromoteStudent(null);
+      setSinglePromoteToClass('');
+      setSinglePromotePreview(null);
+      loadStudents();
+    } catch (e) { toast.error('Failed to promote student'); }
+  };
+
+  const handlePromote = async (e) => {
+    e.preventDefault();
+    if (!promotePreview) {
+      await handleLoadPromotePreview();
+    } else {
+      await handleConfirmBulkPromote();
+    }
   };
 
   const resetForm = () => {
@@ -229,30 +286,86 @@ const Students = () => {
             </Button>
           )}
 
-          <Dialog open={showPromoteDialog} onOpenChange={setShowPromoteDialog}>
+          <Dialog open={showPromoteDialog} onOpenChange={(open) => { setShowPromoteDialog(open); if (!open) { setPromotePreview(null); setPromoteData({ fromClass: '', toClass: '' }); } }}>
             <DialogTrigger asChild>
               <Button data-testid="promote-students-btn" variant="outline" className="font-bold rounded-xl bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200"><TrendingUp className="w-5 h-5 mr-2" />Promote</Button>
             </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle className="text-2xl font-bold">Promote Students</DialogTitle></DialogHeader>
-              <form onSubmit={handlePromote} className="space-y-4">
-                <div><Label>From Class *</Label>
-                  <Select value={promoteData.fromClass} onValueChange={(v) => setPromoteData({ ...promoteData, fromClass: v })}>
-                    <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="From" /></SelectTrigger>
-                    <SelectContent>{classes.map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
-                  </Select>
+            <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader><DialogTitle className="text-2xl font-bold">{promotePreview ? 'Promotion Preview' : 'Promote Students'}</DialogTitle></DialogHeader>
+              {!promotePreview ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><Label>From Class *</Label>
+                      <Select value={promoteData.fromClass} onValueChange={(v) => setPromoteData({ ...promoteData, fromClass: v })}>
+                        <SelectTrigger data-testid="promote-from-class" className="rounded-xl h-12"><SelectValue placeholder="From" /></SelectTrigger>
+                        <SelectContent>{classes.map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div><Label>To Class *</Label>
+                      <Select value={promoteData.toClass} onValueChange={(v) => setPromoteData({ ...promoteData, toClass: v })}>
+                        <SelectTrigger data-testid="promote-to-class" className="rounded-xl h-12"><SelectValue placeholder="To" /></SelectTrigger>
+                        <SelectContent>{classes.map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+                    <p className="font-bold mb-1">Promotion Rules:</p>
+                    <ul className="list-disc ml-5 space-y-0.5">
+                      <li>Total Due = (Term1 + Term2 + Term3 + custom fees) − total paid</li>
+                      <li>New Term 1 = Old Term 1 + Total Due (Previous Year Due included)</li>
+                      <li>New Term 2 = Old Term 2 (unchanged)</li>
+                      <li>New Term 3 = Old Term 3 + ₹5000</li>
+                      <li>All paid amounts reset to 0 in the new year</li>
+                    </ul>
+                  </div>
+                  <div className="flex justify-end gap-3 pt-4">
+                    <Button type="button" variant="outline" onClick={() => setShowPromoteDialog(false)} className="rounded-xl">Cancel</Button>
+                    <Button data-testid="load-preview-btn" type="button" disabled={previewLoading} onClick={handleLoadPromotePreview} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">
+                      {previewLoading ? 'Loading...' : 'Preview Promotion'}
+                    </Button>
+                  </div>
                 </div>
-                <div><Label>To Class *</Label>
-                  <Select value={promoteData.toClass} onValueChange={(v) => setPromoteData({ ...promoteData, toClass: v })}>
-                    <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="To" /></SelectTrigger>
-                    <SelectContent>{classes.map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
-                  </Select>
+              ) : (
+                <div className="space-y-4">
+                  <div className="bg-sky-50 border border-sky-200 rounded-xl p-4 flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-sm font-bold text-sky-900">Class {promotePreview.fromClass} → Class {promotePreview.toClass}</p>
+                    <p className="text-sm font-bold text-sky-900">{promotePreview.studentCount} student(s) will be promoted</p>
+                  </div>
+                  <div className="overflow-x-auto max-h-96 border border-slate-200 rounded-xl">
+                    <table className="w-full text-sm">
+                      <thead className="bg-slate-50 sticky top-0">
+                        <tr>
+                          <th className="px-3 py-2 text-left font-bold uppercase text-xs text-slate-600">Name</th>
+                          <th className="px-3 py-2 text-left font-bold uppercase text-xs text-slate-600">Roll</th>
+                          <th className="px-3 py-2 text-right font-bold uppercase text-xs text-slate-600">Paid</th>
+                          <th className="px-3 py-2 text-right font-bold uppercase text-xs text-rose-600">Due</th>
+                          <th className="px-3 py-2 text-center font-bold uppercase text-xs text-slate-600">Old T1/T2/T3</th>
+                          <th className="px-3 py-2 text-center font-bold uppercase text-xs text-emerald-700">New T1/T2/T3</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {promotePreview.preview.map((p) => (
+                          <tr key={p.studentId} className="border-t border-slate-100 hover:bg-slate-50/80">
+                            <td className="px-3 py-2 font-semibold text-slate-900">{p.studentName}</td>
+                            <td className="px-3 py-2">{p.rollNo}</td>
+                            <td className="px-3 py-2 text-right text-emerald-600 font-bold">{'\u20B9'}{p.totalPaid.toLocaleString()}</td>
+                            <td className="px-3 py-2 text-right text-rose-600 font-bold">{'\u20B9'}{p.totalDue.toLocaleString()}</td>
+                            <td className="px-3 py-2 text-center text-slate-500 text-xs">{p.oldFees.term1}/{p.oldFees.term2}/{p.oldFees.term3}</td>
+                            <td className="px-3 py-2 text-center text-emerald-700 font-bold text-xs">{p.newFees.term1}/{p.newFees.term2}/{p.newFees.term3}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="flex justify-between items-center pt-4">
+                    <Button type="button" variant="outline" onClick={() => setPromotePreview(null)} className="rounded-xl">Back</Button>
+                    <div className="flex gap-3">
+                      <Button type="button" variant="outline" onClick={() => setShowPromoteDialog(false)} className="rounded-xl">Cancel</Button>
+                      <Button data-testid="confirm-bulk-promote-btn" type="button" onClick={handleConfirmBulkPromote} className="bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl">Confirm Promotion</Button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-end gap-3 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setShowPromoteDialog(false)} className="rounded-xl">Cancel</Button>
-                  <Button type="submit" className="bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl">Promote</Button>
-                </div>
-              </form>
+              )}
             </DialogContent>
           </Dialog>
         </div>
@@ -318,6 +431,7 @@ const Students = () => {
                       <div className="flex gap-2">
                         <button onClick={() => navigate(`/students/${student.id}`)} data-testid={`view-student-${student.rollNo}`} className="p-2 hover:bg-indigo-100 rounded-lg transition-colors"><Eye className="w-4 h-4 text-indigo-600" /></button>
                         <button onClick={() => openEditDialog(student)} data-testid={`edit-student-${student.rollNo}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                        <button onClick={() => openSinglePromoteDialog(student)} data-testid={`promote-student-${student.rollNo}`} title="Promote this student" className="p-2 hover:bg-amber-100 rounded-lg transition-colors"><TrendingUp className="w-4 h-4 text-amber-600" /></button>
                         <button onClick={() => handleDeleteStudent(student.id)} data-testid={`delete-student-${student.rollNo}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
                       </div>
                     </TableCell>
@@ -356,6 +470,59 @@ const Students = () => {
               <Button data-testid="submit-student-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">Update Student</Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Single Student Promote Dialog */}
+      <Dialog open={showSinglePromoteDialog} onOpenChange={(open) => { setShowSinglePromoteDialog(open); if (!open) { setSinglePromoteStudent(null); setSinglePromoteToClass(''); setSinglePromotePreview(null); } }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader><DialogTitle className="text-2xl font-bold">Promote Student</DialogTitle></DialogHeader>
+          {singlePromoteStudent && (
+            <div className="space-y-4">
+              <div className="bg-slate-50 rounded-xl p-4 grid grid-cols-2 gap-3">
+                <div><p className="text-xs font-bold uppercase text-slate-400">Name</p><p className="font-bold text-slate-900">{singlePromoteStudent.studentName}</p></div>
+                <div><p className="text-xs font-bold uppercase text-slate-400">Current Class</p><p className="font-bold text-slate-900">Class {singlePromoteStudent.studentClass} - {singlePromoteStudent.section}</p></div>
+              </div>
+              <div>
+                <Label>Promote To Class *</Label>
+                <Select value={singlePromoteToClass} onValueChange={(v) => { setSinglePromoteToClass(v); setSinglePromotePreview(null); }}>
+                  <SelectTrigger data-testid="single-promote-to-class" className="rounded-xl h-12"><SelectValue placeholder="Select target class" /></SelectTrigger>
+                  <SelectContent>{classes.filter(c => c.className !== singlePromoteStudent.studentClass).map((c) => <SelectItem key={c.className} value={c.className}>Class {c.className}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              {!singlePromotePreview ? (
+                <div className="flex justify-end gap-3 pt-2">
+                  <Button type="button" variant="outline" onClick={() => setShowSinglePromoteDialog(false)} className="rounded-xl">Cancel</Button>
+                  <Button data-testid="single-load-preview-btn" disabled={!singlePromoteToClass} onClick={handleLoadSinglePreview} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">Preview</Button>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 space-y-2">
+                    <div className="flex justify-between text-sm"><span className="font-bold text-slate-700">Total Expected (last year):</span><span className="font-bold text-slate-900">{'\u20B9'}{singlePromotePreview.totalExpected.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-sm"><span className="font-bold text-slate-700">Total Paid:</span><span className="font-bold text-emerald-600">{'\u20B9'}{singlePromotePreview.totalPaid.toLocaleString()}</span></div>
+                    <div className="flex justify-between text-base"><span className="font-extrabold text-slate-800">Previous Year Due:</span><span className="font-extrabold text-rose-600">{'\u20B9'}{singlePromotePreview.totalDue.toLocaleString()}</span></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {[1,2,3].map((n) => (
+                      <div key={n} className="border border-slate-200 rounded-xl p-3 text-center">
+                        <p className="text-xs font-bold uppercase text-slate-400">Term {n}</p>
+                        <p className="text-xs text-slate-500 line-through">{'\u20B9'}{singlePromotePreview.oldFees[`term${n}`].toLocaleString()}</p>
+                        <ArrowRight className="w-3 h-3 text-amber-500 inline" />
+                        <p className="text-lg font-extrabold text-emerald-700">{'\u20B9'}{singlePromotePreview.newFees[`term${n}`].toLocaleString()}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex justify-between items-center pt-2">
+                    <Button type="button" variant="outline" onClick={() => setSinglePromotePreview(null)} className="rounded-xl">Back</Button>
+                    <div className="flex gap-3">
+                      <Button type="button" variant="outline" onClick={() => setShowSinglePromoteDialog(false)} className="rounded-xl">Cancel</Button>
+                      <Button data-testid="confirm-single-promote-btn" onClick={handleConfirmSinglePromote} className="bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl">Confirm Promotion</Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

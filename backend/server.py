@@ -799,21 +799,19 @@ async def delete_student(student_id: str):
     if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Student not found")
     return {"message": "Student deleted"}
 
-@api_router.post("/students/promote")
-async def promote_students(request: PromoteRequest):
+@api_router.post("/students/promote-preview")
+async def promote_students_preview(request: PromoteRequest):
+    """Compute new fee structure for all students in fromClass without committing."""
     students = await db.students.find({"studentClass": request.fromClass}, {"_id": 0}).to_list(10000)
     if not students:
         raise HTTPException(status_code=404, detail="No students found")
-    
-    promoted_count = 0
+
+    preview = []
     for student in students:
-        # Total paid: sum of all NON-reverted, NON-archived payments (terms + custom + concessions)
         active_payments = await db.fee_payments.find(
             {"studentId": student['id'], "status": {"$nin": ["reverted", "archived"]}}, {"_id": 0}
         ).to_list(1000)
         total_paid = sum(p.get('amount', 0) for p in active_payments)
-        
-        # Applicable custom fees for OLD class
         old_custom_fees = await db.fee_types.find({
             "$or": [
                 {"applicableClass": request.fromClass, "applicableSection": student.get('section', '')},
@@ -822,43 +820,133 @@ async def promote_students(request: PromoteRequest):
             ]
         }, {"_id": 0}).to_list(500)
         total_custom = sum(cf.get('amount', 0) for cf in old_custom_fees)
-        
-        old_term1 = student.get('feeTerm1', 0)
-        old_term2 = student.get('feeTerm2', 0)
-        old_term3 = student.get('feeTerm3', 0)
-        total_expected = old_term1 + old_term2 + old_term3 + total_custom
+        old_t1 = student.get('feeTerm1', 0)
+        old_t2 = student.get('feeTerm2', 0)
+        old_t3 = student.get('feeTerm3', 0)
+        total_expected = old_t1 + old_t2 + old_t3 + total_custom
         total_due = max(0, total_expected - total_paid)
-        
-        # New year fee structure
-        new_term1 = total_due  # Previous year dues
-        new_term2 = old_term2  # Same base
-        new_term3 = old_term3 + 5000  # Base + 5000
-        
-        prev_year_dues = {
-            "amount": total_due,
-            "fromClass": request.fromClass,
-            "promotedOn": datetime.now(timezone.utc).isoformat()
-        }
-        
-        await db.students.update_one(
-            {"id": student['id']},
-            {"$set": {
-                "studentClass": request.toClass,
-                "feeTerm1": new_term1,
-                "feeTerm2": new_term2,
-                "feeTerm3": new_term3,
-                "previousYearDues": prev_year_dues,
-                "academicYear": str(datetime.now().year)
-            }}
-        )
-        # Archive all existing payments so new year starts fresh (paid = 0)
-        await db.fee_payments.update_many(
-            {"studentId": student['id'], "status": {"$nin": ["reverted", "archived"]}},
-            {"$set": {"status": "archived"}}
-        )
+        new_t1 = old_t1 + total_due
+        new_t2 = old_t2
+        new_t3 = old_t3 + 5000
+        preview.append({
+            "studentId": student['id'],
+            "studentCode": student.get('studentCode', ''),
+            "studentName": student.get('studentName', ''),
+            "rollNo": student.get('rollNo', ''),
+            "section": student.get('section', ''),
+            "totalPaid": total_paid,
+            "totalExpected": total_expected,
+            "totalDue": total_due,
+            "oldFees": {"term1": old_t1, "term2": old_t2, "term3": old_t3, "customFeesTotal": total_custom},
+            "newFees": {"term1": new_t1, "term2": new_t2, "term3": new_t3},
+        })
+    return {"fromClass": request.fromClass, "toClass": request.toClass, "studentCount": len(preview), "preview": preview}
+
+@api_router.post("/students/promote")
+async def promote_students(request: PromoteRequest):
+    students = await db.students.find({"studentClass": request.fromClass}, {"_id": 0}).to_list(10000)
+    if not students:
+        raise HTTPException(status_code=404, detail="No students found")
+    
+    promoted_count = 0
+    for student in students:
+        await _promote_one_student(student, request.toClass)
         promoted_count += 1
     
-    return {"message": f"Promoted {promoted_count} students from {request.fromClass} to {request.toClass}. Previous year dues moved to Term 1, Term 3 increased by Rs.5000."}
+    return {"message": f"Promoted {promoted_count} students from {request.fromClass} to {request.toClass}. Previous year due added to Term 1, Term 3 increased by Rs.5000."}
+
+
+class SingleStudentPromote(BaseModel):
+    toClass: str
+
+async def _calc_promotion(student: Dict):
+    """Shared calc logic. Returns dict with totals + new fees."""
+    from_class = student.get('studentClass', '')
+    active_payments = await db.fee_payments.find(
+        {"studentId": student['id'], "status": {"$nin": ["reverted", "archived"]}}, {"_id": 0}
+    ).to_list(1000)
+    total_paid = sum(p.get('amount', 0) for p in active_payments)
+    old_custom_fees = await db.fee_types.find({
+        "$or": [
+            {"applicableClass": from_class, "applicableSection": student.get('section', '')},
+            {"applicableClass": from_class, "applicableSection": {"$in": [None, ""]}},
+            {"applicableClass": {"$in": [None, ""]}, "applicableSection": {"$in": [None, ""]}},
+        ]
+    }, {"_id": 0}).to_list(500)
+    total_custom = sum(cf.get('amount', 0) for cf in old_custom_fees)
+    old_t1 = student.get('feeTerm1', 0)
+    old_t2 = student.get('feeTerm2', 0)
+    old_t3 = student.get('feeTerm3', 0)
+    total_expected = old_t1 + old_t2 + old_t3 + total_custom
+    total_due = max(0, total_expected - total_paid)
+    return {
+        "fromClass": from_class,
+        "totalPaid": total_paid, "totalExpected": total_expected, "totalDue": total_due,
+        "oldFees": {"term1": old_t1, "term2": old_t2, "term3": old_t3, "customFeesTotal": total_custom},
+        "newFees": {"term1": old_t1 + total_due, "term2": old_t2, "term3": old_t3 + 5000},
+    }
+
+async def _promote_one_student(student: Dict, to_class: str):
+    """Promotes a single student using current fee carryover rules. Appends to promotionHistory."""
+    calc = await _calc_promotion(student)
+    history_entry = {
+        "fromClass": calc['fromClass'],
+        "toClass": to_class,
+        "totalDue": calc['totalDue'],
+        "totalPaid": calc['totalPaid'],
+        "oldFees": calc['oldFees'],
+        "newFees": calc['newFees'],
+        "promotedOn": datetime.now(timezone.utc).isoformat(),
+    }
+    # Build the update
+    set_doc = {
+        "studentClass": to_class,
+        "feeTerm1": calc['newFees']['term1'],
+        "feeTerm2": calc['newFees']['term2'],
+        "feeTerm3": calc['newFees']['term3'],
+        "previousYearDues": {
+            "amount": calc['totalDue'],
+            "fromClass": calc['fromClass'],
+            "promotedOn": history_entry['promotedOn']
+        },
+        "academicYear": str(datetime.now().year),
+    }
+    await db.students.update_one(
+        {"id": student['id']},
+        {"$set": set_doc, "$push": {"promotionHistory": history_entry}}
+    )
+    # Archive existing payments
+    await db.fee_payments.update_many(
+        {"studentId": student['id'], "status": {"$nin": ["reverted", "archived"]}},
+        {"$set": {"status": "archived"}}
+    )
+
+@api_router.post("/students/{student_id}/promote-preview")
+async def promote_single_preview(student_id: str, data: SingleStudentPromote):
+    student = await db.students.find_one({"id": student_id}, {"_id": 0})
+    if not student: raise HTTPException(status_code=404, detail="Student not found")
+    calc = await _calc_promotion(student)
+    return {
+        "studentId": student['id'],
+        "studentCode": student.get('studentCode', ''),
+        "studentName": student.get('studentName', ''),
+        "rollNo": student.get('rollNo', ''),
+        "section": student.get('section', ''),
+        "fromClass": calc['fromClass'],
+        "toClass": data.toClass,
+        "totalPaid": calc['totalPaid'],
+        "totalExpected": calc['totalExpected'],
+        "totalDue": calc['totalDue'],
+        "oldFees": calc['oldFees'],
+        "newFees": calc['newFees'],
+    }
+
+@api_router.post("/students/{student_id}/promote")
+async def promote_single_student(student_id: str, data: SingleStudentPromote):
+    student = await db.students.find_one({"id": student_id}, {"_id": 0})
+    if not student: raise HTTPException(status_code=404, detail="Student not found")
+    await _promote_one_student(student, data.toClass)
+    return {"message": f"{student.get('studentName')} promoted to class {data.toClass}."}
 
 class BulkDeleteRequest(BaseModel):
     studentIds: List[str]
@@ -1513,6 +1601,7 @@ async def get_student_detail(student_id: str):
                             "percentage": round(present_days / total_days * 100, 1) if total_days > 0 else 0},
         "payments": payments, "paidTerms": paid_terms, "paidCustomFees": paid_custom, "customFees": custom_fees,
         "inventoryIssued": inventory_issued,
+        "promotionHistory": student.get('promotionHistory', []),
     }
 
 # ==================== PARENT PORTAL ====================
