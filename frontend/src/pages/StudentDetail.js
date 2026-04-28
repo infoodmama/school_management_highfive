@@ -26,6 +26,7 @@ const StudentDetail = () => {
   if (!data) return <div className="text-center py-20 text-slate-400">Student not found</div>;
 
   const { student, attendance, attendanceStats, payments, paidTerms, paidCustomFees, customFees, inventoryIssued } = data;
+  const promotionHistory = data.promotionHistory || [];
 
   const getTermPaid = (n) => paidTerms?.[`term${n}`] || 0;
   const getTermTotal = (n) => student[`feeTerm${n}`] || 0;
