@@ -114,8 +114,15 @@ export const api = {
   // Concessions
   getConcessions: (params) => axios.get(`${API}/concessions`, { params }),
   createConcession: (data) => axios.post(`${API}/concessions`, data),
+  createBulkConcession: (data) => axios.post(`${API}/concessions/bulk`, data),
   approveConcession: (id) => axios.post(`${API}/concessions/${id}/approve`),
   rejectConcession: (id) => axios.post(`${API}/concessions/${id}/reject`),
+
+  // Leave Requests
+  getLeaveRequests: (params) => axios.get(`${API}/leave-requests`, { params }),
+  createLeaveRequest: (data) => axios.post(`${API}/leave-requests`, data),
+  approveLeaveRequest: (id, data) => axios.post(`${API}/leave-requests/${id}/approve`, data || {}),
+  rejectLeaveRequest: (id, data) => axios.post(`${API}/leave-requests/${id}/reject`, data || {}),
 
   // Invoice
   getInvoiceUrl: (paymentId) => `${API}/fees/invoice/${paymentId}`,

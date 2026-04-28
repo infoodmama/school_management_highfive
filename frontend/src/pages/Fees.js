@@ -40,6 +40,8 @@ const Fees = () => {
   // Concession state
   const [concessions, setConcessions] = useState([]);
   const [conForm, setConForm] = useState({ studentCode: '', termNumber: '', feeTypeId: '', feeName: '', concessionAmount: '', letterUrl: '' });
+  const [conMode, setConMode] = useState('single'); // 'single' or 'bulk'
+  const [bulkConForm, setBulkConForm] = useState({ studentCodes: '', termNumber: '', feeTypeId: '', feeName: '', concessionAmount: '', letterUrl: '' });
 
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
@@ -561,7 +563,14 @@ const Fees = () => {
 
         {/* Concessions Tab */}
         <TabsContent value="concession" className="space-y-6">
-          {/* Request Concession */}
+          {/* Mode Toggle */}
+          <div className="flex gap-2">
+            <Button data-testid="con-mode-single" onClick={() => setConMode('single')} variant={conMode === 'single' ? 'default' : 'outline'} className={`rounded-xl font-bold ${conMode === 'single' ? 'bg-sky-500 hover:bg-sky-600 text-white' : ''}`}>Single Concession</Button>
+            <Button data-testid="con-mode-bulk" onClick={() => setConMode('bulk')} variant={conMode === 'bulk' ? 'default' : 'outline'} className={`rounded-xl font-bold ${conMode === 'bulk' ? 'bg-sky-500 hover:bg-sky-600 text-white' : ''}`}>Bulk Concession</Button>
+          </div>
+
+          {/* Single Request Concession */}
+          {conMode === 'single' && (
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-4 sm:p-6">
             <h2 className="text-xl font-bold text-slate-800 mb-4">Request Concession</h2>
             <form onSubmit={async (e) => {
@@ -577,7 +586,7 @@ const Fees = () => {
               } catch (error) { toast.error(error.response?.data?.detail || 'Failed'); }
             }} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div><Label>Student ID *</Label><Input required value={conForm.studentCode} onChange={(e) => setConForm({ ...conForm, studentCode: e.target.value })} className="rounded-xl h-12" placeholder="e.g., ADM001" /></div>
+                <div><Label>Student ID *</Label><Input data-testid="con-student-code" required value={conForm.studentCode} onChange={(e) => setConForm({ ...conForm, studentCode: e.target.value })} className="rounded-xl h-12" placeholder="e.g., ADM001" /></div>
                 <div><Label>Term (or leave blank for custom fee)</Label>
                   <Select value={conForm.termNumber || '_none'} onValueChange={(v) => setConForm({ ...conForm, termNumber: v === '_none' ? '' : v, feeTypeId: '' })}>
                     <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Term" /></SelectTrigger>
@@ -592,7 +601,7 @@ const Fees = () => {
                     </Select>
                   </div>
                 )}
-                <div><Label>Concession Amount *</Label><Input type="number" required value={conForm.concessionAmount} onChange={(e) => setConForm({ ...conForm, concessionAmount: e.target.value })} className="rounded-xl h-12" placeholder="Amount" /></div>
+                <div><Label>Concession Amount *</Label><Input data-testid="con-amount" type="number" required value={conForm.concessionAmount} onChange={(e) => setConForm({ ...conForm, concessionAmount: e.target.value })} className="rounded-xl h-12" placeholder="Amount" /></div>
               </div>
               <div><Label>Upload Letter (Optional)</Label>
                 <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
@@ -601,16 +610,75 @@ const Fees = () => {
                 }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700" />
                 {conForm.letterUrl && <p className="text-sm text-emerald-600 font-medium mt-1">Letter uploaded</p>}
               </div>
-              <div className="flex justify-end"><Button type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95">Submit Request</Button></div>
+              <div className="flex justify-end"><Button data-testid="submit-con-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95">Submit Request</Button></div>
             </form>
           </div>
+          )}
 
-          {/* Concession List */}
+          {/* Bulk Concession */}
+          {conMode === 'bulk' && (
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-4 sm:p-6">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Concession Requests</h2>
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Bulk Concession Request</h2>
+            <p className="text-sm text-slate-500 mb-4">Enter multiple Student IDs separated by comma or new line. Same concession will be applied to all.</p>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                const codes = bulkConForm.studentCodes.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+                if (codes.length === 0) { toast.error('Enter at least one Student ID'); return; }
+                const data = {
+                  studentCodes: codes,
+                  concessionAmount: parseFloat(bulkConForm.concessionAmount),
+                  letterUrl: bulkConForm.letterUrl || null,
+                  requestedBy: user?.name || user?.username || 'Staff',
+                };
+                if (bulkConForm.termNumber) { data.termNumber = parseInt(bulkConForm.termNumber); data.feeTypeId = null; data.feeName = null; }
+                else if (bulkConForm.feeTypeId) { data.termNumber = null; data.feeTypeId = bulkConForm.feeTypeId; const ft = feeTypes.find(f => f.id === bulkConForm.feeTypeId); data.feeName = ft?.feeName || ''; }
+                const r = await api.createBulkConcession(data);
+                toast.success(`Created ${r.data.created} concessions${r.data.errors?.length ? `, ${r.data.errors.length} errors` : ''}`);
+                if (r.data.errors?.length) { r.data.errors.forEach(er => toast.error(er)); }
+                setBulkConForm({ studentCodes: '', termNumber: '', feeTypeId: '', feeName: '', concessionAmount: '', letterUrl: '' });
+                loadConcessions();
+              } catch (error) { toast.error(error.response?.data?.detail || 'Failed'); }
+            }} className="space-y-4">
+              <div>
+                <Label>Student IDs * (comma or newline separated)</Label>
+                <textarea data-testid="bulk-con-codes" required value={bulkConForm.studentCodes} onChange={(e) => setBulkConForm({ ...bulkConForm, studentCodes: e.target.value })} className="w-full rounded-xl border border-slate-200 p-3 mt-1 text-sm" rows={4} placeholder="ADM001, ADM002, ADM003&#10;or one per line" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div><Label>Term (or blank for custom fee)</Label>
+                  <Select value={bulkConForm.termNumber || '_none'} onValueChange={(v) => setBulkConForm({ ...bulkConForm, termNumber: v === '_none' ? '' : v, feeTypeId: '' })}>
+                    <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Term" /></SelectTrigger>
+                    <SelectContent><SelectItem value="_none">-- Custom Fee --</SelectItem><SelectItem value="1">Term 1</SelectItem><SelectItem value="2">Term 2</SelectItem><SelectItem value="3">Term 3</SelectItem></SelectContent>
+                  </Select>
+                </div>
+                {!bulkConForm.termNumber && (
+                  <div><Label>Custom Fee Type</Label>
+                    <Select value={bulkConForm.feeTypeId || '_none'} onValueChange={(v) => setBulkConForm({ ...bulkConForm, feeTypeId: v === '_none' ? '' : v })}>
+                      <SelectTrigger className="rounded-xl h-12"><SelectValue placeholder="Select Fee" /></SelectTrigger>
+                      <SelectContent><SelectItem value="_none">-- Select --</SelectItem>{feeTypes.map(ft => <SelectItem key={ft.id} value={ft.id}>{ft.feeName}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                )}
+                <div><Label>Concession Amount (each) *</Label><Input data-testid="bulk-con-amount" type="number" required value={bulkConForm.concessionAmount} onChange={(e) => setBulkConForm({ ...bulkConForm, concessionAmount: e.target.value })} className="rounded-xl h-12" placeholder="Amount" /></div>
+              </div>
+              <div><Label>Upload Letter (Optional)</Label>
+                <input type="file" accept="image/*,application/pdf" onChange={async (e) => {
+                  const file = e.target.files[0]; if (!file) return;
+                  try { const r = await api.uploadFile(file); setBulkConForm({ ...bulkConForm, letterUrl: r.data.url }); toast.success('Uploaded'); } catch (err) { toast.error('Failed'); }
+                }} className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700" />
+                {bulkConForm.letterUrl && <p className="text-sm text-emerald-600 font-medium mt-1">Letter uploaded</p>}
+              </div>
+              <div className="flex justify-end"><Button data-testid="submit-bulk-con-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95">Submit Bulk Request</Button></div>
+            </form>
+          </div>
+          )}
+
+          {/* Concession List - last 4 only */}
+          <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-4 sm:p-6">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Recent Concession Requests (Last 4)</h2>
             {concessions.length === 0 ? <p className="text-slate-400 text-center py-8">No concession requests</p> : (
               <div className="space-y-3">
-                {concessions.slice().reverse().map((c) => (
+                {concessions.slice().reverse().slice(0, 4).map((c) => (
                   <div key={c.id} className={`p-4 rounded-xl border ${c.status === 'approved' ? 'border-emerald-200 bg-emerald-50/30' : c.status === 'rejected' ? 'border-rose-200 bg-rose-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
                     <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                       <div>
@@ -633,6 +701,7 @@ const Fees = () => {
                 ))}
               </div>
             )}
+            <p className="text-xs text-slate-400 mt-3">Tip: Go to <span className="font-bold">Approvals</span> to view the full history and pending concessions.</p>
           </div>
         </TabsContent>
       </Tabs>

@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { GraduationCap, ClipboardCheck, DollarSign, CalendarDays, BookOpenCheck, LogOut, Download, User, Phone, MapPin, Menu, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { GraduationCap, ClipboardCheck, DollarSign, CalendarDays, BookOpenCheck, LogOut, Download, User, Phone, MapPin, Menu, X, FileText, Send } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { Textarea } from '../components/ui/textarea';
 import { Toaster } from '../components/ui/sonner';
 
 const ParentPortal = () => {
@@ -15,6 +16,16 @@ const ParentPortal = () => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
   const [mobileNav, setMobileNav] = useState(false);
+  const [leaveRequests, setLeaveRequests] = useState([]);
+  const [leaveForm, setLeaveForm] = useState({ fromDate: '', toDate: '', reason: '', attachmentUrl: '' });
+  const [leaveLoading, setLeaveLoading] = useState(false);
+
+  const loadLeaveRequests = useCallback(async (studentId) => {
+    try {
+      const r = await api.getLeaveRequests({ studentId });
+      setLeaveRequests(r.data);
+    } catch (e) { /* ignore */ }
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -24,12 +35,52 @@ const ParentPortal = () => {
       setLoggedIn(true);
       const dash = await api.getParentDashboard(response.data.student.id);
       setDashData(dash.data);
+      loadLeaveRequests(response.data.student.id);
     } catch (error) { toast.error('Invalid credentials'); }
     finally { setLoading(false); }
   };
 
-  const handleLogout = () => { setLoggedIn(false); setDashData(null); setUsername(''); setPassword(''); setActiveTab('overview'); };
+  const handleLogout = () => { setLoggedIn(false); setDashData(null); setUsername(''); setPassword(''); setActiveTab('overview'); setLeaveRequests([]); };
   const getStatusColor = (s) => s === 'present' ? 'bg-emerald-100 text-emerald-700' : s === 'absent' ? 'bg-rose-100 text-rose-700' : s === 'holiday' ? 'bg-orange-100 text-orange-800' : 'bg-slate-100 text-slate-600';
+
+  const handleLeaveAttachment = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const r = await api.uploadFile(file);
+      setLeaveForm((f) => ({ ...f, attachmentUrl: r.data.url }));
+      toast.success('File uploaded');
+    } catch (err) { toast.error('Upload failed'); }
+  };
+
+  const handleSubmitLeave = async (e) => {
+    e.preventDefault();
+    if (!dashData) return;
+    if (!leaveForm.fromDate || !leaveForm.toDate || !leaveForm.reason) {
+      toast.error('Please fill all required fields');
+      return;
+    }
+    if (leaveForm.fromDate > leaveForm.toDate) {
+      toast.error('From date must be before To date');
+      return;
+    }
+    try {
+      setLeaveLoading(true);
+      await api.createLeaveRequest({
+        studentId: dashData.student.id,
+        studentCode: dashData.student.studentCode || dashData.student.rollNo,
+        studentName: dashData.student.studentName,
+        fromDate: leaveForm.fromDate,
+        toDate: leaveForm.toDate,
+        reason: leaveForm.reason,
+        attachmentUrl: leaveForm.attachmentUrl || null,
+      });
+      toast.success('Leave request submitted');
+      setLeaveForm({ fromDate: '', toDate: '', reason: '', attachmentUrl: '' });
+      loadLeaveRequests(dashData.student.id);
+    } catch (err) { toast.error('Failed to submit leave'); }
+    finally { setLeaveLoading(false); }
+  };
 
   if (!loggedIn) {
     return (
@@ -68,6 +119,7 @@ const ParentPortal = () => {
     { key: 'fees', label: 'Fees', icon: DollarSign },
     { key: 'events', label: 'Events', icon: CalendarDays },
     { key: 'homework', label: 'Homework', icon: BookOpenCheck },
+    { key: 'leave', label: 'Leave', icon: FileText },
   ];
 
   return (
@@ -325,6 +377,69 @@ const ParentPortal = () => {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ========= LEAVE ========= */}
+        {activeTab === 'leave' && (
+          <div className="space-y-6">
+            {/* Submit new leave */}
+            <div className="bg-white rounded-2xl shadow p-4 sm:p-6 border border-slate-100">
+              <h2 className="text-lg font-bold text-slate-800 mb-4">Submit Leave Request</h2>
+              <form onSubmit={handleSubmitLeave} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>From Date *</Label>
+                    <Input data-testid="leave-from-date" type="date" required value={leaveForm.fromDate} onChange={(e) => setLeaveForm({ ...leaveForm, fromDate: e.target.value })} className="rounded-xl h-12" />
+                  </div>
+                  <div>
+                    <Label>To Date *</Label>
+                    <Input data-testid="leave-to-date" type="date" required value={leaveForm.toDate} onChange={(e) => setLeaveForm({ ...leaveForm, toDate: e.target.value })} className="rounded-xl h-12" />
+                  </div>
+                </div>
+                <div>
+                  <Label>Reason *</Label>
+                  <Textarea data-testid="leave-reason" required value={leaveForm.reason} onChange={(e) => setLeaveForm({ ...leaveForm, reason: e.target.value })} className="rounded-xl" rows={3} placeholder="Reason for leave (e.g., Medical, Family function)" />
+                </div>
+                <div>
+                  <Label>Attachment (Optional)</Label>
+                  <input type="file" accept="image/*,application/pdf" onChange={handleLeaveAttachment} data-testid="leave-attachment" className="mt-2 block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-sky-100 file:text-sky-700 hover:file:bg-sky-200" />
+                  {leaveForm.attachmentUrl && <p className="text-xs text-emerald-600 font-bold mt-1">File attached</p>}
+                </div>
+                <div className="flex justify-end">
+                  <Button data-testid="submit-leave-btn" type="submit" disabled={leaveLoading} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">
+                    <Send className="w-4 h-4 mr-2" />{leaveLoading ? 'Submitting...' : 'Submit Request'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+
+            {/* Leave history */}
+            <div className="bg-white rounded-2xl shadow p-4 sm:p-6 border border-slate-100">
+              <h2 className="text-lg font-bold text-slate-800 mb-4">Leave History</h2>
+              {leaveRequests.length === 0 ? (
+                <p className="text-slate-400 text-center py-8 text-sm">No leave requests yet</p>
+              ) : (
+                <div className="space-y-3">
+                  {leaveRequests.map((lr) => (
+                    <div key={lr.id} data-testid={`parent-leave-${lr.id}`} className={`p-4 rounded-xl border ${lr.status === 'approved' ? 'border-emerald-200 bg-emerald-50/30' : lr.status === 'rejected' ? 'border-rose-200 bg-rose-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
+                      <div className="flex items-start justify-between gap-3 flex-wrap">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-slate-900">{lr.fromDate} to {lr.toDate}</p>
+                          <p className="text-sm text-slate-600 mt-1">{lr.reason}</p>
+                          {lr.attachmentUrl && (
+                            <a href={lr.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 px-2 py-1 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold text-xs">
+                              <FileText className="w-3 h-3" />View
+                            </a>
+                          )}
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-bold ${lr.status === 'approved' ? 'bg-emerald-500 text-white' : lr.status === 'rejected' ? 'bg-rose-500 text-white' : 'bg-amber-500 text-white'}`}>{lr.status.toUpperCase()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

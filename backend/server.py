@@ -334,6 +334,37 @@ class ConcessionCreate(BaseModel):
     letterUrl: Optional[str] = None
     requestedBy: str
 
+class BulkConcessionCreate(BaseModel):
+    studentCodes: List[str]
+    termNumber: Optional[int] = None
+    feeTypeId: Optional[str] = None
+    feeName: Optional[str] = None
+    concessionAmount: float
+    letterUrl: Optional[str] = None
+    requestedBy: str
+
+class LeaveRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    studentId: str
+    studentCode: str
+    studentName: str
+    fromDate: str
+    toDate: str
+    reason: str
+    attachmentUrl: Optional[str] = None
+    status: str = "pending"
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class LeaveRequestCreate(BaseModel):
+    studentId: str
+    studentCode: str
+    studentName: str
+    fromDate: str
+    toDate: str
+    reason: str
+    attachmentUrl: Optional[str] = None
+
 # ==================== WHATSAPP SERVICE ====================
 
 BASE_WA_URL = "https://crm.abhiit.com/api/meta/v19.0"
@@ -770,11 +801,58 @@ async def delete_student(student_id: str):
 
 @api_router.post("/students/promote")
 async def promote_students(request: PromoteRequest):
-    result = await db.students.update_many(
-        {"studentClass": request.fromClass},
-        {"$set": {"studentClass": request.toClass}, "$inc": {"feeTerm3": 5000}}
-    )
-    return {"message": f"Promoted {result.modified_count} students from {request.fromClass} to {request.toClass}. Added Rs.5000 to Term 3 for each."}
+    students = await db.students.find({"studentClass": request.fromClass}, {"_id": 0}).to_list(10000)
+    if not students:
+        raise HTTPException(status_code=404, detail="No students found")
+    
+    promoted_count = 0
+    for student in students:
+        # Calculate pending dues per term
+        payments = await db.fee_payments.find({"studentId": student['id'], "status": {"$ne": "reverted"}}, {"_id": 0}).to_list(100)
+        paid_terms = {}
+        for p in payments:
+            if p.get('termNumber'):
+                k = p['termNumber']
+                paid_terms[k] = paid_terms.get(k, 0) + p['amount']
+        
+        old_term1 = student.get('feeTerm1', 0)
+        old_term2 = student.get('feeTerm2', 0)
+        old_term3 = student.get('feeTerm3', 0)
+        pending1 = max(0, old_term1 - paid_terms.get(1, 0))
+        pending2 = max(0, old_term2 - paid_terms.get(2, 0))
+        pending3 = max(0, old_term3 - paid_terms.get(3, 0))
+        total_pending = pending1 + pending2 + pending3
+        
+        # Mark existing unpaid payments as reverted (so they don't count in new year)
+        # Keep them in DB for history but they won't affect fresh year calculations
+        
+        # New year fees: ALL pending dues added to Term 1, new year starts fresh
+        # Term 1 = total pending from last year (as "Previous Year Dues"), Terms 2 & 3 remain same fresh fees
+        new_term1 = total_pending  # Previous year dues rolled into Term 1
+        new_term2 = old_term2  # Fresh Term 2 (same as before, will be new year's fee)
+        new_term3 = old_term3  # Fresh Term 3
+        
+        # Store previous year info for reference
+        prev_year_dues = {
+            "totalDues": total_pending,
+            "term1Pending": pending1, "term2Pending": pending2, "term3Pending": pending3,
+            "fromClass": request.fromClass, "promotedOn": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.students.update_one(
+            {"id": student['id']},
+            {"$set": {
+                "studentClass": request.toClass,
+                "feeTerm1": new_term1,
+                "feeTerm2": new_term2,
+                "feeTerm3": new_term3,
+                "previousYearDues": prev_year_dues,
+                "academicYear": str(datetime.now().year)
+            }}
+        )
+        promoted_count += 1
+    
+    return {"message": f"Promoted {promoted_count} students from {request.fromClass} to {request.toClass}. All pending dues carried to Term 1 of new class."}
 
 class BulkDeleteRequest(BaseModel):
     studentIds: List[str]
@@ -1047,7 +1125,21 @@ async def export_fees(startDate: str, endDate: str, format: str = 'csv'):
 @api_router.post("/fees/send-reminders")
 async def send_fee_reminders():
     settings_doc = await get_wa_settings()
-    today = datetime.now().strftime('%Y-%m-%d')
+    upcoming = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
+    fee_types = await db.fee_types.find({"dueDate": {"$ne": None, "$lte": upcoming}}, {"_id": 0}).to_list(500)
+    sent_count = 0
+    for ft in fee_types:
+        query = {}
+        if ft.get('applicableClass') and ft['applicableClass']: query['studentClass'] = ft['applicableClass']
+        if ft.get('applicableSection') and ft['applicableSection']: query['section'] = ft['applicableSection']
+        students = await db.students.find(query, {"_id": 0}).to_list(10000)
+        for student in students:
+            paid = await db.fee_payments.find_one({"studentId": student['id'], "feeTypeId": ft['id']}, {"_id": 0})
+            if paid: continue
+            message = f"Fee Reminder: {ft['feeName']} of Rs.{ft['amount']} is due on {ft['dueDate']} for {student['studentName']}."
+            result = await send_whatsapp_message(student.get('mobile', ''), message, settings_doc)
+            if result.get('success'): sent_count += 1
+    return {"message": f"Reminders sent to {sent_count} parents", "feeTypesChecked": len(fee_types)}
 
 # ==================== FEE REVERT ====================
 
@@ -1071,6 +1163,28 @@ async def create_concession(data: ConcessionCreate):
     await db.concessions.insert_one(doc)
     return obj
 
+@api_router.post("/concessions/bulk")
+async def create_bulk_concession(data: BulkConcessionCreate):
+    if not data.studentCodes:
+        raise HTTPException(status_code=400, detail="No students selected")
+    created = []
+    errors = []
+    for code in data.studentCodes:
+        student = await db.students.find_one({"studentCode": code}, {"_id": 0})
+        if not student:
+            errors.append(f"{code}: not found")
+            continue
+        obj = Concession(
+            studentId=student['id'], studentCode=code, studentName=student['studentName'],
+            termNumber=data.termNumber, feeTypeId=data.feeTypeId, feeName=data.feeName,
+            concessionAmount=data.concessionAmount, letterUrl=data.letterUrl, requestedBy=data.requestedBy
+        )
+        doc = obj.model_dump()
+        doc['createdAt'] = doc['createdAt'].isoformat()
+        await db.concessions.insert_one(doc)
+        created.append(code)
+    return {"created": len(created), "students": created, "errors": errors}
+
 @api_router.get("/concessions")
 async def get_concessions(status: Optional[str] = None):
     query = {}
@@ -1090,18 +1204,15 @@ async def approve_concession(concession_id: str):
         new_val = max(0, student.get(field, 0) - con['concessionAmount'])
         await db.students.update_one({"id": con['studentId']}, {"$set": {field: new_val}})
     elif con.get('feeTypeId'):
-        fee_type = await db.fee_types.find_one({"id": con['feeTypeId']}, {"_id": 0})
-        if fee_type:
-            new_amount = max(0, fee_type['amount'] - con['concessionAmount'])
-            # Store student-specific concession as a fee payment with negative/concession flag
-            await db.fee_payments.insert_one({
-                "id": str(uuid.uuid4()), "studentId": con['studentId'], "studentCode": con.get('studentCode', ''),
-                "rollNo": student.get('rollNo', ''), "studentName": student.get('studentName', ''),
-                "feeTypeId": con['feeTypeId'], "feeName": con.get('feeName', ''),
-                "amount": con['concessionAmount'], "paymentMode": "concession",
-                "receiptNumber": f"CON-{str(uuid.uuid4())[:6]}", "status": "concession",
-                "paymentDate": datetime.now(timezone.utc).isoformat(), "collectedBy": "System"
-            })
+        # Store student-specific concession as a fee payment with concession flag
+        await db.fee_payments.insert_one({
+            "id": str(uuid.uuid4()), "studentId": con['studentId'], "studentCode": con.get('studentCode', ''),
+            "rollNo": student.get('rollNo', ''), "studentName": student.get('studentName', ''),
+            "feeTypeId": con['feeTypeId'], "feeName": con.get('feeName', ''),
+            "amount": con['concessionAmount'], "paymentMode": "concession",
+            "receiptNumber": f"CON-{str(uuid.uuid4())[:6]}", "status": "concession",
+            "paymentDate": datetime.now(timezone.utc).isoformat(), "collectedBy": "System"
+        })
     await db.concessions.update_one({"id": concession_id}, {"$set": {"status": "approved"}})
     return {"message": "Concession approved and applied"}
 
@@ -1112,21 +1223,59 @@ async def reject_concession(concession_id: str):
     if con['status'] != 'pending': raise HTTPException(status_code=400, detail="Already processed")
     await db.concessions.update_one({"id": concession_id}, {"$set": {"status": "rejected"}})
     return {"message": "Concession rejected"}
-    upcoming = (datetime.now() + timedelta(days=7)).strftime('%Y-%m-%d')
-    fee_types = await db.fee_types.find({"dueDate": {"$ne": None, "$lte": upcoming}}, {"_id": 0}).to_list(500)
-    sent_count = 0
-    for ft in fee_types:
-        query = {}
-        if ft.get('applicableClass') and ft['applicableClass']: query['studentClass'] = ft['applicableClass']
-        if ft.get('applicableSection') and ft['applicableSection']: query['section'] = ft['applicableSection']
-        students = await db.students.find(query, {"_id": 0}).to_list(10000)
-        for student in students:
-            paid = await db.fee_payments.find_one({"studentId": student['id'], "feeTypeId": ft['id']}, {"_id": 0})
-            if paid: continue
-            message = f"Fee Reminder: {ft['feeName']} of Rs.{ft['amount']} is due on {ft['dueDate']} for {student['studentName']}."
-            result = await send_whatsapp_message(student.get('mobile', ''), message, settings_doc)
-            if result.get('success'): sent_count += 1
-    return {"message": f"Reminders sent to {sent_count} parents", "feeTypesChecked": len(fee_types)}
+
+# ==================== LEAVE REQUEST ROUTES ====================
+
+@api_router.post("/leave-requests")
+async def create_leave_request(data: LeaveRequestCreate):
+    student = await db.students.find_one({"id": data.studentId}, {"_id": 0})
+    if not student:
+        student = await db.students.find_one({"studentCode": data.studentCode}, {"_id": 0})
+    if not student:
+        raise HTTPException(status_code=404, detail="Student not found")
+    obj = LeaveRequest(
+        studentId=student['id'], studentCode=student.get('studentCode', data.studentCode),
+        studentName=student['studentName'], fromDate=data.fromDate, toDate=data.toDate,
+        reason=data.reason, attachmentUrl=data.attachmentUrl
+    )
+    doc = obj.model_dump()
+    doc['createdAt'] = doc['createdAt'].isoformat()
+    await db.leave_requests.insert_one(doc)
+    return obj
+
+@api_router.get("/leave-requests")
+async def get_leave_requests(status: Optional[str] = None, studentId: Optional[str] = None, studentClass: Optional[str] = None, section: Optional[str] = None):
+    query = {}
+    if status: query['status'] = status
+    if studentId: query['studentId'] = studentId
+    # Filter by class/section via student lookup
+    if studentClass or section:
+        student_query = {}
+        if studentClass: student_query['studentClass'] = studentClass
+        if section: student_query['section'] = section
+        students = await db.students.find(student_query, {"_id": 0, "id": 1}).to_list(10000)
+        student_ids = [s['id'] for s in students]
+        query['studentId'] = {"$in": student_ids}
+    requests = await db.leave_requests.find(query, {"_id": 0}).sort("createdAt", -1).to_list(1000)
+    return requests
+
+@api_router.post("/leave-requests/{request_id}/approve")
+async def approve_leave_request(request_id: str, data: Optional[Dict] = None):
+    req = await db.leave_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req: raise HTTPException(status_code=404, detail="Leave request not found")
+    if req['status'] != 'pending': raise HTTPException(status_code=400, detail="Already processed")
+    approved_by = (data or {}).get('approvedBy', 'Admin') if data else 'Admin'
+    await db.leave_requests.update_one({"id": request_id}, {"$set": {"status": "approved", "approvedBy": approved_by}})
+    return {"message": "Leave approved"}
+
+@api_router.post("/leave-requests/{request_id}/reject")
+async def reject_leave_request(request_id: str, data: Optional[Dict] = None):
+    req = await db.leave_requests.find_one({"id": request_id}, {"_id": 0})
+    if not req: raise HTTPException(status_code=404, detail="Leave request not found")
+    if req['status'] != 'pending': raise HTTPException(status_code=400, detail="Already processed")
+    rejected_by = (data or {}).get('rejectedBy', 'Admin') if data else 'Admin'
+    await db.leave_requests.update_one({"id": request_id}, {"$set": {"status": "rejected", "rejectedBy": rejected_by}})
+    return {"message": "Leave rejected"}
 
 # ==================== EXPENSE ROUTES ====================
 

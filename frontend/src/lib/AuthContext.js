@@ -10,9 +10,9 @@ export const useAuth = () => useContext(AuthContext);
 // teacher: students, attendance, calendar, homework
 // office_staff: students, fees, expenses, inventory
 const ROLE_ACCESS = {
-  super_admin: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff', '/settings'],
-  admin_role: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff'],
-  teacher: ['/students', '/attendance', '/calendar', '/homework'],
+  super_admin: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff', '/approvals', '/settings'],
+  admin_role: ['/', '/classes', '/students', '/attendance', '/fees', '/expenses', '/inventory', '/calendar', '/homework', '/staff', '/approvals'],
+  teacher: ['/students', '/attendance', '/calendar', '/homework', '/approvals'],
   office_staff: ['/students', '/fees', '/expenses', '/inventory'],
 };
 
