@@ -142,7 +142,7 @@ const ParentPortal = () => {
         <div className={`${mobileNav ? 'flex' : 'hidden lg:flex'} flex-wrap gap-2 pb-2`}>
           {tabs.map((t) => {
             const Icon = t.icon;
-            return <button key={t.key} onClick={() => { setActiveTab(t.key); setMobileNav(false); }} className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap ${activeTab === t.key ? 'bg-sky-500 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}><Icon className="w-4 h-4" />{t.label}</button>;
+            return <button key={t.key} data-testid={`parent-tab-${t.key}`} onClick={() => { setActiveTab(t.key); setMobileNav(false); }} className={`flex items-center gap-2 px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all whitespace-nowrap ${activeTab === t.key ? 'bg-sky-500 text-white shadow-lg' : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'}`}><Icon className="w-4 h-4" />{t.label}</button>;
           })}
         </div>
         {/* Mobile: show active tab label */}
