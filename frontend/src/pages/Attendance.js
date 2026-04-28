@@ -31,21 +31,28 @@ const Attendance = () => {
       setLoading(true);
       // Fetch students AND existing attendance for this date in parallel
       const [studentsResp, attendanceResp] = await Promise.all([
-        api.getStudents({ studentClass: takeAttendance.studentClass, section: takeAttendance.section }),
+        api.getStudents({ studentClass: takeAttendance.studentClass, section: takeAttendance.section, limit: 1000 }),
         api.getAttendance({ studentClass: takeAttendance.studentClass, section: takeAttendance.section, date: takeAttendance.date }),
       ]);
-      setStudents(studentsResp.data);
+      // Backend returns paginated { students, total, ... } — fall back to array for compat
+      const studentsList = Array.isArray(studentsResp.data) ? studentsResp.data : (studentsResp.data?.students || []);
+      setStudents(studentsList);
 
       // Build map of existing attendance by studentId
       const existingMap = {};
       (attendanceResp.data || []).forEach((a) => { existingMap[a.studentId] = a.status; });
 
+      if (studentsList.length === 0) toast.info('No students found for the selected class & section');
+
       // Initialize with existing status or 'undefined'
-      setAttendanceData(studentsResp.data.map((s) => ({
+      setAttendanceData(studentsList.map((s) => ({
         studentId: s.id, rollNo: s.rollNo, studentName: s.studentName, mobile: s.mobile,
         status: existingMap[s.id] || 'undefined',
       })));
-    } catch (error) { toast.error('Failed to load students'); }
+    } catch (error) {
+      const msg = error.response?.data?.detail || error.message || 'Network error';
+      toast.error(`Failed to load students: ${msg}`);
+    }
     finally { setLoading(false); }
   };
 
