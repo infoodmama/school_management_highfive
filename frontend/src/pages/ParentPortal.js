@@ -226,28 +226,125 @@ const ParentPortal = () => {
         )}
 
         {/* ========= ATTENDANCE ========= */}
-        {activeTab === 'attendance' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-white rounded-xl shadow p-4 border text-center"><p className="text-xs font-bold text-slate-400 uppercase">Total</p><p className="text-2xl font-extrabold text-slate-900">{attendanceStats.totalDays}</p></div>
-              <div className="bg-emerald-50 rounded-xl shadow p-4 border border-emerald-200 text-center"><p className="text-xs font-bold text-emerald-500 uppercase">Present</p><p className="text-2xl font-extrabold text-emerald-600">{attendanceStats.presentDays}</p></div>
-              <div className="bg-rose-50 rounded-xl shadow p-4 border border-rose-200 text-center"><p className="text-xs font-bold text-rose-500 uppercase">Absent</p><p className="text-2xl font-extrabold text-rose-600">{attendanceStats.absentDays}</p></div>
-              <div className={`rounded-xl shadow p-4 border text-center ${attendanceStats.percentage >= 75 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}><p className="text-xs font-bold text-slate-400 uppercase">Percentage</p><p className={`text-2xl font-extrabold ${attendanceStats.percentage >= 75 ? 'text-emerald-600' : 'text-rose-600'}`}>{attendanceStats.percentage}%</p></div>
-            </div>
-            <div className="bg-white rounded-2xl shadow p-4 sm:p-6 border border-slate-100">
-              <h2 className="text-lg font-bold text-slate-800 mb-4">Last 30 Days</h2>
-              <div className="space-y-2">
-                {dashData.recentAttendance.slice().reverse().map((a, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                    <p className="font-medium text-slate-700 text-sm">{a.date}</p>
-                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${getStatusColor(a.status)}`}>{a.status.toUpperCase()}</span>
+        {activeTab === 'attendance' && (() => {
+          // Build month -> stats map from full attendance (not just last 30)
+          const allAtt = (dashData.fullAttendance && dashData.fullAttendance.length > 0) ? dashData.fullAttendance : (dashData.recentAttendance || []);
+          const monthMap = {};
+          allAtt.forEach((a) => {
+            const m = (a.date || '').slice(0, 7); // YYYY-MM
+            if (!m) return;
+            if (!monthMap[m]) monthMap[m] = { month: m, present: 0, absent: 0, holiday: 0, total: 0, records: {} };
+            monthMap[m].total++;
+            if (a.status === 'present') monthMap[m].present++;
+            else if (a.status === 'absent') monthMap[m].absent++;
+            else if (a.status === 'holiday') monthMap[m].holiday++;
+            monthMap[m].records[a.date] = a.status;
+          });
+          const months = Object.values(monthMap).sort((a, b) => b.month.localeCompare(a.month));
+          const recentMonth = months[0];
+
+          // Build calendar grid for the most recent month with records
+          const renderCalendar = (m) => {
+            if (!m) return null;
+            const [yy, mm] = m.month.split('-').map(Number);
+            const firstDay = new Date(yy, mm - 1, 1);
+            const daysInMonth = new Date(yy, mm, 0).getDate();
+            const startWeekday = firstDay.getDay();
+            const cells = [];
+            for (let i = 0; i < startWeekday; i++) cells.push(null);
+            for (let d = 1; d <= daysInMonth; d++) {
+              const dateStr = `${yy}-${String(mm).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+              cells.push({ day: d, status: m.records[dateStr] });
+            }
+            return (
+              <div className="grid grid-cols-7 gap-1">
+                {['S','M','T','W','T','F','S'].map((w, i) => <div key={i} className="text-[10px] font-bold text-slate-400 uppercase text-center py-1">{w}</div>)}
+                {cells.map((c, i) => {
+                  if (!c) return <div key={i} />;
+                  const cls = c.status === 'present' ? 'bg-emerald-500 text-white' : c.status === 'absent' ? 'bg-rose-500 text-white' : c.status === 'holiday' ? 'bg-orange-400 text-white' : 'bg-slate-100 text-slate-400';
+                  return <div key={i} className={`aspect-square rounded-lg flex items-center justify-center text-xs font-bold ${cls}`} title={c.status || 'no record'}>{c.day}</div>;
+                })}
+              </div>
+            );
+          };
+
+          return (
+            <div className="space-y-4">
+              {/* Top stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-white rounded-xl shadow p-4 border text-center"><p className="text-xs font-bold text-slate-400 uppercase">Total Days</p><p className="text-2xl font-extrabold text-slate-900">{attendanceStats.totalDays}</p></div>
+                <div className="bg-emerald-50 rounded-xl shadow p-4 border border-emerald-200 text-center"><p className="text-xs font-bold text-emerald-500 uppercase">Present</p><p className="text-2xl font-extrabold text-emerald-600">{attendanceStats.presentDays}</p></div>
+                <div className="bg-rose-50 rounded-xl shadow p-4 border border-rose-200 text-center"><p className="text-xs font-bold text-rose-500 uppercase">Absent</p><p className="text-2xl font-extrabold text-rose-600">{attendanceStats.absentDays}</p></div>
+                <div className={`rounded-xl shadow p-4 border text-center ${attendanceStats.percentage >= 75 ? 'bg-emerald-50 border-emerald-200' : 'bg-rose-50 border-rose-200'}`}><p className="text-xs font-bold text-slate-400 uppercase">Overall %</p><p className={`text-2xl font-extrabold ${attendanceStats.percentage >= 75 ? 'text-emerald-600' : 'text-rose-600'}`}>{attendanceStats.percentage}%</p></div>
+              </div>
+
+              {/* Calendar - Recent Month */}
+              {recentMonth && (
+                <div className="bg-white rounded-2xl shadow p-4 sm:p-6 border border-slate-100">
+                  <div className="flex items-center justify-between flex-wrap gap-2 mb-4">
+                    <h2 className="text-lg font-bold text-slate-800">Calendar - {new Date(recentMonth.month + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</h2>
+                    <div className="flex items-center gap-3 text-xs">
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-emerald-500" />Present</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-rose-500" />Absent</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-400" />Holiday</span>
+                      <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-slate-200" />No record</span>
+                    </div>
                   </div>
-                ))}
-                {dashData.recentAttendance.length === 0 && <p className="text-slate-400 text-center py-8">No records yet</p>}
+                  {renderCalendar(recentMonth)}
+                </div>
+              )}
+
+              {/* Monthly Breakdown */}
+              {months.length > 0 && (
+                <div className="bg-white rounded-2xl shadow p-4 sm:p-6 border border-slate-100">
+                  <h2 className="text-lg font-bold text-slate-800 mb-4">Monthly Breakdown</h2>
+                  <div className="space-y-3">
+                    {months.map((m) => {
+                      const pct = m.total > 0 ? Math.round(m.present / m.total * 100) : 0;
+                      const label = new Date(m.month + '-01T00:00:00').toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+                      return (
+                        <div key={m.month} data-testid={`parent-month-${m.month}`} className="border border-slate-100 rounded-xl p-3">
+                          <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                            <p className="font-bold text-slate-900">{label}</p>
+                            <span className={`px-3 py-0.5 rounded-full text-xs font-bold ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>{pct}%</span>
+                          </div>
+                          <div className="grid grid-cols-4 gap-2 text-xs text-center">
+                            <div className="bg-slate-50 rounded-lg py-1.5"><p className="font-bold text-slate-400 uppercase text-[9px]">Total</p><p className="font-extrabold text-slate-900">{m.total}</p></div>
+                            <div className="bg-emerald-50 rounded-lg py-1.5"><p className="font-bold text-emerald-500 uppercase text-[9px]">Present</p><p className="font-extrabold text-emerald-600">{m.present}</p></div>
+                            <div className="bg-rose-50 rounded-lg py-1.5"><p className="font-bold text-rose-500 uppercase text-[9px]">Absent</p><p className="font-extrabold text-rose-600">{m.absent}</p></div>
+                            <div className="bg-orange-50 rounded-lg py-1.5"><p className="font-bold text-orange-500 uppercase text-[9px]">Holiday</p><p className="font-extrabold text-orange-600">{m.holiday}</p></div>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="mt-2 flex h-1.5 rounded-full overflow-hidden bg-slate-100">
+                            {m.total > 0 && <>
+                              <div className="bg-emerald-500" style={{ width: `${(m.present / m.total) * 100}%` }} />
+                              <div className="bg-rose-500" style={{ width: `${(m.absent / m.total) * 100}%` }} />
+                              <div className="bg-orange-400" style={{ width: `${(m.holiday / m.total) * 100}%` }} />
+                            </>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Recent records list */}
+              <div className="bg-white rounded-2xl shadow p-4 sm:p-6 border border-slate-100">
+                <h2 className="text-lg font-bold text-slate-800 mb-4">Recent Records</h2>
+                <div className="space-y-2 max-h-72 overflow-y-auto">
+                  {dashData.recentAttendance.slice().reverse().map((a, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
+                      <p className="font-medium text-slate-700 text-sm">{a.date}</p>
+                      <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold ${getStatusColor(a.status)}`}>{a.status.toUpperCase()}</span>
+                    </div>
+                  ))}
+                  {dashData.recentAttendance.length === 0 && <p className="text-slate-400 text-center py-8">No records yet</p>}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ========= FEES ========= */}
         {activeTab === 'fees' && (

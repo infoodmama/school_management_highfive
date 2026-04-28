@@ -67,9 +67,18 @@ const Attendance = () => {
     if (!viewFilters.studentClass || !viewFilters.section) { toast.error('Please select class and section'); return; }
     try {
       setLoading(true);
-      const response = await api.getAttendance(viewFilters);
-      setAttendanceRecords(response.data);
-    } catch (error) { toast.error('Failed to load attendance'); }
+      // Build clean params (omit empty strings so backend doesn't mis-filter)
+      const params = { studentClass: viewFilters.studentClass, section: viewFilters.section };
+      if (viewFilters.startDate) params.startDate = viewFilters.startDate;
+      if (viewFilters.endDate) params.endDate = viewFilters.endDate;
+      const response = await api.getAttendance(params);
+      const records = Array.isArray(response.data) ? response.data : [];
+      setAttendanceRecords(records);
+      if (records.length === 0) toast.info('No attendance records found for the selected filters');
+    } catch (error) {
+      const msg = error.response?.data?.detail || error.message || 'Network error';
+      toast.error(`Failed to load attendance: ${msg}`);
+    }
     finally { setLoading(false); }
   };
 
@@ -98,16 +107,17 @@ const Attendance = () => {
     const stats = {};
     const dateSet = new Set();
     attendanceRecords.forEach((r) => {
+      const roll = String(r.rollNo ?? '');
       dateSet.add(r.date);
-      if (!stats[r.rollNo]) stats[r.rollNo] = { name: r.studentName, rollNo: r.rollNo, total: 0, present: 0, absent: 0, holiday: 0, records: {} };
-      stats[r.rollNo].total++;
-      if (r.status === 'present') stats[r.rollNo].present++;
-      else if (r.status === 'absent') stats[r.rollNo].absent++;
-      else if (r.status === 'holiday') stats[r.rollNo].holiday++;
-      stats[r.rollNo].records[r.date] = r.status;
+      if (!stats[roll]) stats[roll] = { name: r.studentName, rollNo: roll, total: 0, present: 0, absent: 0, holiday: 0, records: {} };
+      stats[roll].total++;
+      if (r.status === 'present') stats[roll].present++;
+      else if (r.status === 'absent') stats[roll].absent++;
+      else if (r.status === 'holiday') stats[roll].holiday++;
+      stats[roll].records[r.date] = r.status;
     });
     const dates = Array.from(dateSet).sort();
-    return { students: Object.values(stats).sort((a, b) => a.rollNo.localeCompare(b.rollNo)), dates };
+    return { students: Object.values(stats).sort((a, b) => String(a.rollNo).localeCompare(String(b.rollNo), undefined, { numeric: true })), dates };
   };
 
   // Count stats for take attendance
@@ -248,9 +258,10 @@ const Attendance = () => {
                   <SelectContent>{getSections(viewFilters.studentClass).map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div><Label>Start Date *</Label><Input type="date" value={viewFilters.startDate} onChange={(e) => setViewFilters({ ...viewFilters, startDate: e.target.value })} className="rounded-xl h-12" /></div>
-              <div><Label>End Date *</Label><Input type="date" value={viewFilters.endDate} onChange={(e) => setViewFilters({ ...viewFilters, endDate: e.target.value })} className="rounded-xl h-12" /></div>
+              <div><Label>Start Date <span className="text-slate-400 font-normal">(optional)</span></Label><Input data-testid="view-start-date" type="date" value={viewFilters.startDate} onChange={(e) => setViewFilters({ ...viewFilters, startDate: e.target.value })} className="rounded-xl h-12" /></div>
+              <div><Label>End Date <span className="text-slate-400 font-normal">(optional)</span></Label><Input data-testid="view-end-date" type="date" value={viewFilters.endDate} onChange={(e) => setViewFilters({ ...viewFilters, endDate: e.target.value })} className="rounded-xl h-12" /></div>
             </div>
+            <p className="text-xs text-slate-500 mt-2">Tip: Leave dates blank to view all attendance for the selected class & section.</p>
             <div className="flex flex-col sm:flex-row justify-between mt-4 gap-3">
               <Button data-testid="view-attendance-btn" onClick={handleViewAttendance} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">View Attendance</Button>
               <div className="flex gap-2">

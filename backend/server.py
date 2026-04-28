@@ -974,8 +974,9 @@ async def mark_attendance(data: AttendanceSubmit):
     return {"message": f"Attendance marked for {len(records)} students"}
 
 @api_router.get("/attendance")
-async def get_attendance(studentClass: Optional[str] = None, section: Optional[str] = None, startDate: Optional[str] = None, endDate: Optional[str] = None, date: Optional[str] = None):
+async def get_attendance(studentClass: Optional[str] = None, section: Optional[str] = None, startDate: Optional[str] = None, endDate: Optional[str] = None, date: Optional[str] = None, studentId: Optional[str] = None):
     query = {}
+    if studentId: query['studentId'] = studentId
     if studentClass: query['studentClass'] = studentClass
     if section: query['section'] = section
     if date: query['date'] = date
@@ -1642,6 +1643,7 @@ async def parent_dashboard(student_id: str):
         "attendanceStats": {"totalDays": total_days, "presentDays": present_days, "absentDays": absent_days,
                             "percentage": round(present_days / total_days * 100, 1) if total_days > 0 else 0},
         "recentAttendance": attendance[-30:] if attendance else [],
+        "fullAttendance": attendance,
         "payments": payments, "events": events, "homework": homework,
         "feeStructure": {
             "term1": {"total": student.get('feeTerm1', 0), "paid": paid_terms.get('term1', 0)},
