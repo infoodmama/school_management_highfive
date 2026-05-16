@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth, canEdit } from '../lib/AuthContext';
 import { Plus, Edit, Trash2, Package, ArrowRightFromLine } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -11,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
 const Inventory = () => {
+  const { role } = useAuth();
+  const showEdit = canEdit(role);
   const [items, setItems] = useState([]);
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -154,8 +157,10 @@ const Inventory = () => {
                     <TableCell className="text-slate-600">{'\u20B9'}{item.amount.toLocaleString()}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <button onClick={() => openEdit(item)} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
-                        <button onClick={() => handleDelete(item.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                        {showEdit && <>
+                          <button onClick={() => openEdit(item)} data-testid={`edit-inventory-${item.id}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                          <button onClick={() => handleDelete(item.id)} data-testid={`delete-inventory-${item.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                        </>}
                       </div>
                     </TableCell>
                   </TableRow>

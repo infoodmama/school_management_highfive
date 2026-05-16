@@ -35,6 +35,12 @@ export const getNavItems = (role) => {
   return ROLE_ACCESS[role] || [];
 };
 
+// Edit/Delete permissions
+// Non-fees sections (students, classes, inventory, calendar, homework, staff, etc.) → admin & super_admin only
+// Fees section (fee types, payment revert, etc.) → super_admin only
+export const canEdit = (role) => role === 'super_admin' || role === 'admin_role';
+export const canEditFees = (role) => role === 'super_admin';
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null);

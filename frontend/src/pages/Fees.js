@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, DollarSign, Download, Receipt, Plus, Edit, Trash2, Eye } from 'lucide-react';
 import { api } from '../lib/api';
-import { useAuth } from '../lib/AuthContext';
+import { useAuth, canEditFees } from '../lib/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 
 const Fees = () => {
-  const { user } = useAuth();
+  const { user, role } = useAuth();
+  const showEdit = canEditFees(role);
   const [activeTab, setActiveTab] = useState('payment');
   const [classes, setClasses] = useState([]);
   const [studentCode, setStudentCode] = useState('');
@@ -293,7 +294,7 @@ const Fees = () => {
                               </a>
                             )}
                             {p.status !== 'reverted' && p.paymentMode !== 'concession' && (
-                              <button onClick={async () => { if (!window.confirm('Revert this payment?')) return; try { await api.revertPayment(p.id); toast.success('Payment reverted'); handleSearchStudent(); } catch (e) { toast.error('Failed to revert'); } }} data-testid={`revert-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-xl font-bold text-xs transition-colors">Revert</button>
+                              {showEdit && <button onClick={async () => { if (!window.confirm('Revert this payment?')) return; try { await api.revertPayment(p.id); toast.success('Payment reverted'); handleSearchStudent(); } catch (e) { toast.error('Failed to revert'); } }} data-testid={`revert-${p.id}`} className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-100 text-rose-700 hover:bg-rose-200 rounded-xl font-bold text-xs transition-colors">Revert</button>}
                             )}
                           </div>
                         </div>
@@ -409,8 +410,10 @@ const Fees = () => {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-bold text-slate-900">{ft.feeName}</h3>
                     <div className="flex gap-1">
-                      <button onClick={() => openEditFeeType(ft)} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
-                      <button onClick={() => handleDeleteFeeType(ft.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                      {showEdit && <>
+                        <button onClick={() => openEditFeeType(ft)} data-testid={`edit-fee-type-${ft.id}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                        <button onClick={() => handleDeleteFeeType(ft.id)} data-testid={`delete-fee-type-${ft.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                      </>}
                     </div>
                   </div>
                   <p className="text-2xl font-extrabold text-slate-900 mb-3">{'\u20B9'}{ft.amount?.toLocaleString()}</p>

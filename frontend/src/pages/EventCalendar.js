@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth, canEdit } from '../lib/AuthContext';
 import { Plus, Trash2, CalendarDays } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -8,6 +9,8 @@ import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 
 const EventCalendar = () => {
+  const { role } = useAuth();
+  const showEdit = canEdit(role);
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -154,7 +157,7 @@ const EventCalendar = () => {
                     <p className="text-sm text-slate-600 mt-1">{event.description}</p>
                   </div>
                 </div>
-                <button onClick={() => handleDelete(event.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                {showEdit && <button onClick={() => handleDelete(event.id)} data-testid={`delete-event-${event.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>}
               </div>
             ))}
           </div>

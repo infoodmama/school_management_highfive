@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Upload, Download, Search, Edit, Trash2, TrendingUp, Filter, Eye, ArrowRight } from 'lucide-react';
+import { useAuth, canEdit } from '../lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -11,6 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
 const Students = () => {
+  const { role } = useAuth();
+  const showEdit = canEdit(role);
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -430,9 +433,11 @@ const Students = () => {
                     <TableCell>
                       <div className="flex gap-2">
                         <button onClick={() => navigate(`/students/${student.id}`)} data-testid={`view-student-${student.rollNo}`} className="p-2 hover:bg-indigo-100 rounded-lg transition-colors"><Eye className="w-4 h-4 text-indigo-600" /></button>
-                        <button onClick={() => openEditDialog(student)} data-testid={`edit-student-${student.rollNo}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
-                        <button onClick={() => openSinglePromoteDialog(student)} data-testid={`promote-student-${student.rollNo}`} title="Promote this student" className="p-2 hover:bg-amber-100 rounded-lg transition-colors"><TrendingUp className="w-4 h-4 text-amber-600" /></button>
-                        <button onClick={() => handleDeleteStudent(student.id)} data-testid={`delete-student-${student.rollNo}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                        {showEdit && <>
+                          <button onClick={() => openEditDialog(student)} data-testid={`edit-student-${student.rollNo}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                          <button onClick={() => openSinglePromoteDialog(student)} data-testid={`promote-student-${student.rollNo}`} title="Promote this student" className="p-2 hover:bg-amber-100 rounded-lg transition-colors"><TrendingUp className="w-4 h-4 text-amber-600" /></button>
+                          <button onClick={() => handleDeleteStudent(student.id)} data-testid={`delete-student-${student.rollNo}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                        </>}
                       </div>
                     </TableCell>
                   </TableRow>

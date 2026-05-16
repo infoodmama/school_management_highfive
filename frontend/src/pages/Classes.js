@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth, canEdit } from '../lib/AuthContext';
 import { Plus, Edit, Trash2, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -8,6 +9,8 @@ import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 
 const Classes = () => {
+  const { role } = useAuth();
+  const showEdit = canEdit(role);
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -182,14 +185,16 @@ const Classes = () => {
                   </div>
                   <h3 className="text-xl font-bold text-slate-900">Class {cls.className}</h3>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={() => openEdit(cls)} data-testid={`edit-class-${cls.className}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors">
-                    <Edit className="w-4 h-4 text-sky-600" />
-                  </button>
-                  <button onClick={() => handleDelete(cls.id)} data-testid={`delete-class-${cls.className}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors">
-                    <Trash2 className="w-4 h-4 text-rose-600" />
-                  </button>
-                </div>
+                {showEdit && (
+                  <div className="flex gap-1">
+                    <button onClick={() => openEdit(cls)} data-testid={`edit-class-${cls.className}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors">
+                      <Edit className="w-4 h-4 text-sky-600" />
+                    </button>
+                    <button onClick={() => handleDelete(cls.id)} data-testid={`delete-class-${cls.className}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors">
+                      <Trash2 className="w-4 h-4 text-rose-600" />
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="flex flex-wrap gap-2">
                 {cls.sections.map((s) => (

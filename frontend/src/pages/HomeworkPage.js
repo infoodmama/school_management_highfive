@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth, canEdit } from '../lib/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -9,12 +10,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const HomeworkPage = () => {
+  const { user, role } = useAuth();
+  const showEdit = canEdit(role);
+  const defaultAssignedBy = user?.name || user?.username || '';
   const [homework, setHomework] = useState([]);
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
   const [filters, setFilters] = useState({ studentClass: '', section: '' });
-  const [form, setForm] = useState({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: '', attachmentUrl: '', attachmentName: '' });
+  const [form, setForm] = useState({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: defaultAssignedBy, attachmentUrl: '', attachmentName: '' });
+
+  // Keep assignedBy synced to logged-in user
+  useEffect(() => {
+    setForm((f) => ({ ...f, assignedBy: defaultAssignedBy }));
+  }, [defaultAssignedBy]);
 
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
@@ -42,7 +51,7 @@ const HomeworkPage = () => {
       await api.createHomework(form);
       toast.success('Homework assigned');
       setShowDialog(false);
-      setForm({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: '', attachmentUrl: '', attachmentName: '' });
+      setForm({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: defaultAssignedBy, attachmentUrl: '', attachmentName: '' });
       loadHomework();
     } catch (error) { toast.error('Failed to assign homework'); }
   };
@@ -93,7 +102,7 @@ const HomeworkPage = () => {
               <div><Label>Description *</Label><textarea required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full border border-slate-200 rounded-xl p-3 min-h-[80px] focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="Homework details..." /></div>
               <div className="grid grid-cols-2 gap-4">
                 <div><Label>Due Date *</Label><Input type="date" required value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="rounded-xl h-12" /></div>
-                <div><Label>Assigned By *</Label><Input required value={form.assignedBy} onChange={(e) => setForm({ ...form, assignedBy: e.target.value })} className="rounded-xl h-12" placeholder="Teacher name" /></div>
+                <div><Label>Assigned By *</Label><Input required value={form.assignedBy} onChange={(e) => setForm({ ...form, assignedBy: e.target.value })} className="rounded-xl h-12 bg-slate-50" placeholder="Teacher name" readOnly={!!defaultAssignedBy} /></div>
               </div>
               <div>
                 <Label>Attachment (Optional - PDF/Image)</Label>
@@ -157,7 +166,7 @@ const HomeworkPage = () => {
                     {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold transition-colors">{hw.attachmentName?.endsWith('.pdf') ? 'PDF' : 'File'}</a>}
                   </div>
                 </div>
-                <button onClick={() => handleDelete(hw.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors ml-2"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                {showEdit && <button onClick={() => handleDelete(hw.id)} data-testid={`delete-homework-${hw.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors ml-2"><Trash2 className="w-4 h-4 text-rose-600" /></button>}
               </div>
             </div>
           ))}

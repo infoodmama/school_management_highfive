@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useAuth, canEdit } from '../lib/AuthContext';
 import { Plus, Edit, Trash2, UserCog } from 'lucide-react';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -10,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
 
 const StaffPage = () => {
+  const { role } = useAuth();
+  const showEdit = canEdit(role);
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
@@ -109,8 +112,10 @@ const StaffPage = () => {
                     <TableCell className="font-medium text-slate-700">{s.username}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <button onClick={() => openEdit(s)} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
-                        <button onClick={() => handleDelete(s.id)} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                        {showEdit && <>
+                          <button onClick={() => openEdit(s)} data-testid={`edit-staff-${s.id}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                          <button onClick={() => handleDelete(s.id)} data-testid={`delete-staff-${s.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                        </>}
                       </div>
                     </TableCell>
                   </TableRow>
