@@ -133,6 +133,14 @@ export const api = {
   getMarks: (params) => axios.get(`${API}/marks`, { params }),
   getMarksDistinct: () => axios.get(`${API}/marks/distinct`),
   getMarksStats: (params) => axios.get(`${API}/marks/stats`, { params }),
+  deleteMark: (id) => axios.delete(`${API}/marks/${id}`),
+  bulkDeleteMarks: (data) => axios.post(`${API}/marks/bulk-delete`, data),
+
+  // Subjects
+  getSubjects: (params) => axios.get(`${API}/subjects`, { params }),
+  createSubject: (data) => axios.post(`${API}/subjects`, data),
+  updateSubject: (id, data) => axios.put(`${API}/subjects/${id}`, data),
+  deleteSubject: (id) => axios.delete(`${API}/subjects/${id}`),
 
   // Invoice
   getInvoiceUrl: (paymentId) => `${API}/fees/invoice/${paymentId}`,

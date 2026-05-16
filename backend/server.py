@@ -380,6 +380,24 @@ class MarkEntry(BaseModel):
     recordedBy: str = ""
     recordedOn: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+class Subject(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    subjectName: str
+    applicableClasses: List[str] = []
+    maxMarks: float = 100
+    createdAt: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class SubjectCreate(BaseModel):
+    subjectName: str
+    applicableClasses: List[str] = []
+    maxMarks: Optional[float] = 100
+
+class SubjectUpdate(BaseModel):
+    subjectName: Optional[str] = None
+    applicableClasses: Optional[List[str]] = None
+    maxMarks: Optional[float] = None
+
 class MarkRow(BaseModel):
     studentCode: str
     studentName: Optional[str] = ""
@@ -1406,23 +1424,74 @@ async def reject_leave_request(request_id: str, data: Optional[Dict] = None):
     await db.leave_requests.update_one({"id": request_id}, {"$set": {"status": "rejected", "rejectedBy": rejected_by}})
     return {"message": "Leave rejected"}
 
+# ==================== SUBJECT ROUTES ====================
+
+@api_router.post("/subjects", response_model=Subject)
+async def create_subject(data: SubjectCreate):
+    obj = Subject(**data.model_dump())
+    doc = obj.model_dump()
+    doc['createdAt'] = doc['createdAt'].isoformat()
+    await db.subjects.insert_one(doc)
+    return obj
+
+@api_router.get("/subjects")
+async def get_subjects(studentClass: Optional[str] = None):
+    query = {}
+    if studentClass:
+        query = {"$or": [{"applicableClasses": studentClass}, {"applicableClasses": []}, {"applicableClasses": {"$exists": False}}]}
+    subjects = await db.subjects.find(query, {"_id": 0}).to_list(500)
+    subjects.sort(key=lambda s: s.get('subjectName', ''))
+    return subjects
+
+@api_router.put("/subjects/{subject_id}", response_model=Subject)
+async def update_subject(subject_id: str, data: SubjectUpdate):
+    subj = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+    if not subj: raise HTTPException(status_code=404, detail="Subject not found")
+    update = {k: v for k, v in data.model_dump().items() if v is not None}
+    if update: await db.subjects.update_one({"id": subject_id}, {"$set": update})
+    updated = await db.subjects.find_one({"id": subject_id}, {"_id": 0})
+    if isinstance(updated.get('createdAt'), str): updated['createdAt'] = datetime.fromisoformat(updated['createdAt'])
+    return Subject(**updated)
+
+@api_router.delete("/subjects/{subject_id}")
+async def delete_subject(subject_id: str):
+    result = await db.subjects.delete_one({"id": subject_id})
+    if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Subject not found")
+    return {"message": "Subject deleted"}
+
 # ==================== MARKS ROUTES ====================
 
 @api_router.get("/marks/sample-csv")
-async def marks_sample_csv(studentClass: str, section: str):
+async def marks_sample_csv(studentClass: str, section: str, examName: Optional[str] = ""):
     students = await db.students.find({"studentClass": studentClass, "section": section}, {"_id": 0}).to_list(10000)
     if not students:
         raise HTTPException(status_code=404, detail="No students found for this class & section")
+    # Find applicable subjects for this class
+    subjects = await db.subjects.find({"$or": [
+        {"applicableClasses": studentClass},
+        {"applicableClasses": []},
+        {"applicableClasses": {"$exists": False}},
+    ]}, {"_id": 0}).to_list(500)
+    students.sort(key=lambda s: str(s.get('rollNo', '')))
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["Student ID", "Name", "Exam Name", "Subject", "Marks", "Max Marks"])
-    # Pre-fill student id + name; leave exam/subject/marks blank for teacher to fill
-    students.sort(key=lambda s: str(s.get('rollNo', '')))
-    for s in students:
-        writer.writerow([s.get('studentCode', s.get('rollNo', '')), s.get('studentName', ''), '', '', '', '100'])
+    if subjects:
+        # Multiple rows per student — one for each subject
+        for s in students:
+            for subj in subjects:
+                writer.writerow([
+                    s.get('studentCode', s.get('rollNo', '')), s.get('studentName', ''),
+                    examName or '', subj.get('subjectName', ''), '', int(subj.get('maxMarks', 100))
+                ])
+    else:
+        # Fallback: one row per student with blank subject
+        for s in students:
+            writer.writerow([s.get('studentCode', s.get('rollNo', '')), s.get('studentName', ''), examName or '', '', '', '100'])
     output.seek(0)
+    filename = f"marks_template_{studentClass}_{section}{('_' + examName) if examName else ''}.csv"
     return StreamingResponse(io.BytesIO(output.getvalue().encode('utf-8')), media_type="text/csv",
-                             headers={"Content-Disposition": f"attachment; filename=marks_template_{studentClass}_{section}.csv"})
+                             headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 @api_router.post("/marks/bulk")
 async def create_marks_bulk(data: MarksBulkCreate):
@@ -1479,6 +1548,28 @@ async def get_marks_distinct():
     classes_in_marks = await db.marks.distinct("studentClass")
     return {"exams": sorted([e for e in exams if e]), "subjects": sorted([s for s in subjects if s]),
             "classes": sorted([c for c in classes_in_marks if c])}
+
+@api_router.delete("/marks/{mark_id}")
+async def delete_mark(mark_id: str):
+    result = await db.marks.delete_one({"id": mark_id})
+    if result.deleted_count == 0: raise HTTPException(status_code=404, detail="Mark not found")
+    return {"message": "Mark deleted"}
+
+@api_router.post("/marks/bulk-delete")
+async def bulk_delete_marks(data: Dict):
+    """Delete marks matching filters. Body: {studentClass?, section?, examName?, subject?, ids?}"""
+    query = {}
+    if data.get('studentClass'): query['studentClass'] = data['studentClass']
+    if data.get('section'): query['section'] = data['section']
+    if data.get('examName'): query['examName'] = data['examName']
+    if data.get('subject'): query['subject'] = data['subject']
+    if data.get('ids'): query['id'] = {"$in": data['ids']}
+    if not query:
+        raise HTTPException(status_code=400, detail="At least one filter required")
+    result = await db.marks.delete_many(query)
+    return {"deleted": result.deleted_count}
+
+
 
 @api_router.get("/marks/stats")
 async def get_marks_stats(studentClass: Optional[str] = None, section: Optional[str] = None,

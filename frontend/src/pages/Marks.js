@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart3, Upload, Download, Filter, Trophy, Users, GitCompareArrows } from 'lucide-react';
+import { BarChart3, Upload, Download, Filter, Trophy, GitCompareArrows, Book, Plus, Trash2, Edit } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth, canEdit } from '../lib/AuthContext';
 import { toast } from 'sonner';
@@ -9,6 +9,7 @@ import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../components/ui/table';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 const PIE_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#a855f7', '#f97316', '#ef4444'];
@@ -29,6 +30,12 @@ const Marks = () => {
   const [fileName, setFileName] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Subjects state
+  const [subjects, setSubjects] = useState([]);
+  const [subjForm, setSubjForm] = useState({ subjectName: '', applicableClasses: [], maxMarks: '100' });
+  const [editingSubject, setEditingSubject] = useState(null);
+  const [showSubjDialog, setShowSubjDialog] = useState(false);
+
   // View state
   const [viewClass, setViewClass] = useState('');
   const [viewSection, setViewSection] = useState('');
@@ -48,20 +55,90 @@ const Marks = () => {
   const loadDistinct = useCallback(async () => {
     try { const r = await api.getMarksDistinct(); setDistinct(r.data); } catch (e) { /* ignore */ }
   }, []);
-  useEffect(() => { loadClasses(); loadDistinct(); }, [loadClasses, loadDistinct]);
+  const loadSubjects = useCallback(async () => {
+    try { const r = await api.getSubjects(); setSubjects(r.data); } catch (e) { /* ignore */ }
+  }, []);
+  useEffect(() => { loadClasses(); loadDistinct(); loadSubjects(); }, [loadClasses, loadDistinct, loadSubjects]);
 
   const getSections = (cls) => { const f = classes.find((c) => c.className === cls); return f ? f.sections : []; };
 
   const handleDownloadSample = async () => {
     if (!upClass || !upSection) { toast.error('Select class and section first'); return; }
     try {
-      const r = await api.getMarksSampleCSV({ studentClass: upClass, section: upSection });
+      const params = { studentClass: upClass, section: upSection };
+      if (upExam) params.examName = upExam;
+      const r = await api.getMarksSampleCSV(params);
       const url = window.URL.createObjectURL(new Blob([r.data]));
       const link = document.createElement('a');
       link.href = url; link.setAttribute('download', `marks_template_${upClass}_${upSection}.csv`);
       document.body.appendChild(link); link.click(); link.remove();
       toast.success('Sample CSV downloaded');
     } catch (e) { toast.error(e.response?.data?.detail || 'Failed to download'); }
+  };
+
+  // Subjects CRUD
+  const handleSaveSubject = async () => {
+    if (!subjForm.subjectName) { toast.error('Subject name required'); return; }
+    try {
+      const data = {
+        subjectName: subjForm.subjectName,
+        applicableClasses: subjForm.applicableClasses,
+        maxMarks: parseFloat(subjForm.maxMarks) || 100,
+      };
+      if (editingSubject) await api.updateSubject(editingSubject.id, data);
+      else await api.createSubject(data);
+      toast.success('Subject saved');
+      setShowSubjDialog(false);
+      setSubjForm({ subjectName: '', applicableClasses: [], maxMarks: '100' });
+      setEditingSubject(null);
+      loadSubjects();
+    } catch (e) { toast.error('Failed to save'); }
+  };
+
+  const handleDeleteSubject = async (id) => {
+    if (!window.confirm('Delete this subject? Existing marks records will remain.')) return;
+    try { await api.deleteSubject(id); toast.success('Subject deleted'); loadSubjects(); }
+    catch (e) { toast.error('Failed to delete'); }
+  };
+
+  const openEditSubject = (s) => {
+    setEditingSubject(s);
+    setSubjForm({ subjectName: s.subjectName, applicableClasses: s.applicableClasses || [], maxMarks: String(s.maxMarks || 100) });
+    setShowSubjDialog(true);
+  };
+
+  const toggleSubjectClass = (cls) => {
+    setSubjForm((f) => {
+      const has = f.applicableClasses.includes(cls);
+      return { ...f, applicableClasses: has ? f.applicableClasses.filter((c) => c !== cls) : [...f.applicableClasses, cls] };
+    });
+  };
+
+  // Delete uploaded mark(s)
+  const handleDeleteMark = async (id) => {
+    if (!window.confirm('Delete this mark entry?')) return;
+    try { await api.deleteMark(id); toast.success('Deleted'); loadView(); loadDistinct(); }
+    catch (e) { toast.error('Failed to delete'); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!viewClass && !viewSection && !viewExam && !viewSubject) { toast.error('Apply at least one filter first'); return; }
+    const filters = [];
+    if (viewClass) filters.push(`Class ${viewClass}`);
+    if (viewSection) filters.push(`Section ${viewSection}`);
+    if (viewExam) filters.push(`Exam ${viewExam}`);
+    if (viewSubject) filters.push(`Subject ${viewSubject}`);
+    if (!window.confirm(`Delete ALL marks matching: ${filters.join(' / ')}?\nThis cannot be undone.`)) return;
+    try {
+      const payload = {};
+      if (viewClass) payload.studentClass = viewClass;
+      if (viewSection) payload.section = viewSection;
+      if (viewExam) payload.examName = viewExam;
+      if (viewSubject) payload.subject = viewSubject;
+      const r = await api.bulkDeleteMarks(payload);
+      toast.success(`Deleted ${r.data.deleted} records`);
+      loadView(); loadDistinct();
+    } catch (e) { toast.error('Bulk delete failed'); }
   };
 
   const parseCsv = (text) => {
@@ -120,8 +197,10 @@ const Marks = () => {
   const handleImport = async () => {
     if (!upClass || !upSection) { toast.error('Select class and section'); return; }
     if (!upExam) { toast.error('Enter exam name'); return; }
-    if (!upSubject) { toast.error('Enter subject'); return; }
     if (parsedRows.length === 0) { toast.error('Upload a CSV first'); return; }
+    // Validate each row has a subject (either in row or fallback)
+    const missingSubj = parsedRows.find((r) => !(r.subject || upSubject));
+    if (missingSubj) { toast.error(`Row for ${missingSubj.studentCode} is missing Subject`); return; }
     try {
       setSubmitting(true);
       const payload = {
@@ -186,13 +265,14 @@ const Marks = () => {
           <TabsTrigger data-testid="marks-upload-tab" value="upload" className="data-[state=active]:bg-white rounded-lg px-6 py-2 font-bold"><Upload className="w-4 h-4 mr-2" />Upload</TabsTrigger>
           <TabsTrigger data-testid="marks-view-tab" value="view" className="data-[state=active]:bg-white rounded-lg px-6 py-2 font-bold"><Filter className="w-4 h-4 mr-2" />View Records</TabsTrigger>
           {showAnalytics && <TabsTrigger data-testid="marks-analytics-tab" value="analytics" className="data-[state=active]:bg-white rounded-lg px-6 py-2 font-bold"><BarChart3 className="w-4 h-4 mr-2" />Analytics</TabsTrigger>}
+          {showAnalytics && <TabsTrigger data-testid="marks-subjects-tab" value="subjects" className="data-[state=active]:bg-white rounded-lg px-6 py-2 font-bold"><Book className="w-4 h-4 mr-2" />Subjects</TabsTrigger>}
         </TabsList>
 
         {/* Upload */}
         <TabsContent value="upload" className="space-y-6">
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
-            <h2 className="text-xl font-bold text-slate-800 mb-4">Step 1 &mdash; Select Class & Section, Download Sample</h2>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <h2 className="text-xl font-bold text-slate-800 mb-4">Step 1 &mdash; Select Class, Section, Exam &amp; Download Sample</h2>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
               <div><Label>Class *</Label>
                 <Select value={upClass} onValueChange={(v) => { setUpClass(v); setUpSection(''); }}>
                   <SelectTrigger data-testid="marks-up-class" className="rounded-xl h-12"><SelectValue placeholder="Class" /></SelectTrigger>
@@ -205,17 +285,21 @@ const Marks = () => {
                   <SelectContent>{getSections(upClass).map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div className="flex items-end"><Button data-testid="marks-download-sample" onClick={handleDownloadSample} variant="outline" className="font-bold rounded-xl h-12"><Download className="w-4 h-4 mr-2" />Download Sample CSV</Button></div>
+              <div><Label>Exam Name *</Label><Input data-testid="marks-up-exam" value={upExam} onChange={(e) => setUpExam(e.target.value)} className="rounded-xl h-12" placeholder="e.g., Midterm 2026" /></div>
+              <div className="md:col-span-2 flex items-end"><Button data-testid="marks-download-sample" onClick={handleDownloadSample} variant="outline" className="font-bold rounded-xl h-12 w-full"><Download className="w-4 h-4 mr-2" />Download Sample CSV</Button></div>
             </div>
-            <p className="text-xs text-slate-500 mt-3">Sample CSV will contain Student IDs and names pre-filled for the selected class & section. Fill the Exam Name, Subject, Marks columns and upload below.</p>
+            <p className="text-xs text-slate-500 mt-3">Sample CSV will list each student × subject row (multiple rows per student if multiple subjects are defined for that class). Fill the <span className="font-bold">Marks</span> column and upload below. Manage subjects in the <span className="font-bold">Subjects</span> tab.</p>
+            {subjects.filter((s) => !upClass || (s.applicableClasses && s.applicableClasses.includes(upClass)) || (s.applicableClasses || []).length === 0).length === 0 && upClass && (
+              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">No subjects defined for Class {upClass}. Add subjects in the <span className="font-bold">Subjects</span> tab so the CSV pre-fills properly with one row per subject.</div>
+            )}
           </div>
 
           <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
             <h2 className="text-xl font-bold text-slate-800 mb-4">Step 2 &mdash; Upload Filled CSV</h2>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-              <div><Label>Exam Name *</Label><Input data-testid="marks-up-exam" value={upExam} onChange={(e) => setUpExam(e.target.value)} className="rounded-xl h-12" placeholder="e.g., Midterm 2026" /></div>
-              <div><Label>Subject *</Label><Input data-testid="marks-up-subject" value={upSubject} onChange={(e) => setUpSubject(e.target.value)} className="rounded-xl h-12" placeholder="e.g., Mathematics" /></div>
-              <div><Label>Max Marks</Label><Input data-testid="marks-up-max" type="number" value={upMaxMarks} onChange={(e) => setUpMaxMarks(e.target.value)} className="rounded-xl h-12" /></div>
+              <div><Label>Exam Name *</Label><Input data-testid="marks-up-exam-2" value={upExam} onChange={(e) => setUpExam(e.target.value)} className="rounded-xl h-12" placeholder="e.g., Midterm 2026" /></div>
+              <div><Label>Default Subject <span className="text-slate-400 font-normal">(fallback)</span></Label><Input data-testid="marks-up-subject" value={upSubject} onChange={(e) => setUpSubject(e.target.value)} className="rounded-xl h-12" placeholder="Only if blank in CSV" /></div>
+              <div><Label>Default Max Marks</Label><Input data-testid="marks-up-max" type="number" value={upMaxMarks} onChange={(e) => setUpMaxMarks(e.target.value)} className="rounded-xl h-12" /></div>
               <div className="flex items-end">
                 <label className="w-full">
                   <input type="file" accept=".csv" onChange={handleFileChange} data-testid="marks-csv-file" className="hidden" />
@@ -223,6 +307,7 @@ const Marks = () => {
                 </label>
               </div>
             </div>
+            <p className="text-xs text-slate-500 mb-3">Each row in the CSV has its own Exam Name and Subject — so multiple subjects per student are supported automatically. Fields above are used only when a row leaves them blank.</p>
             {fileName && <p className="text-xs text-emerald-600 font-bold">Loaded: {fileName} ({parsedRows.length} rows)</p>}
 
             {parsedRows.length > 0 && (
@@ -287,8 +372,14 @@ const Marks = () => {
 
           {viewRows.length > 0 && (
             <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <p className="text-sm font-bold text-slate-700">{viewRows.length} record(s)</p>
+                {showAnalytics && (viewClass || viewSection || viewExam || viewSubject) && (
+                  <Button data-testid="marks-bulk-delete-btn" onClick={handleBulkDelete} variant="outline" className="text-rose-600 border-rose-200 hover:bg-rose-50 font-bold rounded-xl"><Trash2 className="w-4 h-4 mr-2" />Delete All Matching</Button>
+                )}
+              </div>
               <Table>
-                <TableHeader><TableRow><TableHead>Student ID</TableHead><TableHead>Name</TableHead><TableHead>Class</TableHead><TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead className="text-right">Marks</TableHead><TableHead className="text-right">%</TableHead></TableRow></TableHeader>
+                <TableHeader><TableRow><TableHead>Student ID</TableHead><TableHead>Name</TableHead><TableHead>Class</TableHead><TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead className="text-right">Marks</TableHead><TableHead className="text-right">%</TableHead>{showAnalytics && <TableHead className="text-center">Actions</TableHead>}</TableRow></TableHeader>
                 <TableBody>
                   {viewRows.map((r) => {
                     const pct = r.maxMarks ? Math.round(r.marks / r.maxMarks * 100) : 0;
@@ -301,6 +392,11 @@ const Marks = () => {
                         <TableCell>{r.subject}</TableCell>
                         <TableCell className="text-right font-bold">{r.marks}/{r.maxMarks}</TableCell>
                         <TableCell className="text-right"><span className={`px-2 py-0.5 rounded-full text-xs font-bold ${pct >= 75 ? 'bg-emerald-100 text-emerald-700' : pct >= 33 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>{pct}%</span></TableCell>
+                        {showAnalytics && (
+                          <TableCell className="text-center">
+                            <button onClick={() => handleDeleteMark(r.id)} data-testid={`delete-mark-${r.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}
@@ -435,6 +531,78 @@ const Marks = () => {
                 </div>
               </>
             )}
+          </TabsContent>
+        )}
+
+        {/* Subjects Tab */}
+        {showAnalytics && (
+          <TabsContent value="subjects" className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
+              <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+                <div>
+                  <h2 className="text-xl font-bold text-slate-800">Subjects Master</h2>
+                  <p className="text-sm text-slate-500">Define subjects and which classes they apply to. Sample CSV uses this to pre-fill rows per student per subject.</p>
+                </div>
+                <Dialog open={showSubjDialog} onOpenChange={(o) => { setShowSubjDialog(o); if (!o) { setEditingSubject(null); setSubjForm({ subjectName: '', applicableClasses: [], maxMarks: '100' }); } }}>
+                  <DialogTrigger asChild>
+                    <Button data-testid="add-subject-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl"><Plus className="w-4 h-4 mr-2" />Add Subject</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg">
+                    <DialogHeader><DialogTitle>{editingSubject ? 'Edit Subject' : 'Add Subject'}</DialogTitle></DialogHeader>
+                    <div className="space-y-4">
+                      <div><Label>Subject Name *</Label><Input data-testid="subject-name-input" value={subjForm.subjectName} onChange={(e) => setSubjForm({ ...subjForm, subjectName: e.target.value })} className="rounded-xl h-12" placeholder="e.g., Mathematics" /></div>
+                      <div><Label>Default Max Marks</Label><Input type="number" value={subjForm.maxMarks} onChange={(e) => setSubjForm({ ...subjForm, maxMarks: e.target.value })} className="rounded-xl h-12" /></div>
+                      <div>
+                        <Label>Applicable Classes <span className="text-slate-400 font-normal">(empty = all)</span></Label>
+                        <div className="mt-2 flex flex-wrap gap-2 max-h-40 overflow-y-auto p-2 border border-slate-200 rounded-xl">
+                          {classes.length === 0 && <p className="text-xs text-slate-400">No classes defined.</p>}
+                          {classes.map((c) => {
+                            const checked = subjForm.applicableClasses.includes(c.className);
+                            return (
+                              <button key={c.className} type="button" onClick={() => toggleSubjectClass(c.className)} className={`px-3 py-1 rounded-full text-xs font-bold transition-colors ${checked ? 'bg-sky-500 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Class {c.className}</button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-3 pt-4">
+                        <Button type="button" variant="outline" onClick={() => setShowSubjDialog(false)} className="rounded-xl">Cancel</Button>
+                        <Button data-testid="save-subject-btn" onClick={handleSaveSubject} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">{editingSubject ? 'Update' : 'Add'}</Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
+
+              {subjects.length === 0 ? (
+                <div className="text-center py-12">
+                  <Book className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                  <p className="text-slate-400 font-medium">No subjects defined yet</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader><TableRow><TableHead>Subject</TableHead><TableHead>Applicable Classes</TableHead><TableHead className="text-right">Max Marks</TableHead><TableHead className="text-center">Actions</TableHead></TableRow></TableHeader>
+                  <TableBody>
+                    {subjects.map((s) => (
+                      <TableRow key={s.id} data-testid={`subject-row-${s.id}`}>
+                        <TableCell className="font-bold">{s.subjectName}</TableCell>
+                        <TableCell>
+                          {(s.applicableClasses || []).length === 0 ? <span className="text-slate-400 italic">All classes</span> : (
+                            <div className="flex flex-wrap gap-1">{(s.applicableClasses || []).map((c) => <span key={c} className="px-2 py-0.5 rounded-full text-xs font-bold bg-sky-100 text-sky-700">Class {c}</span>)}</div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-bold">{s.maxMarks}</TableCell>
+                        <TableCell className="text-center">
+                          <div className="inline-flex gap-1">
+                            <button onClick={() => openEditSubject(s)} data-testid={`edit-subject-${s.id}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors"><Edit className="w-4 h-4 text-sky-600" /></button>
+                            <button onClick={() => handleDeleteSubject(s.id)} data-testid={`delete-subject-${s.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors"><Trash2 className="w-4 h-4 text-rose-600" /></button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
           </TabsContent>
         )}
       </Tabs>
