@@ -70,7 +70,7 @@ const EventCalendar = () => {
         </div>
         <div className="flex gap-3">
           <Input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="rounded-xl h-12 w-48" />
-          <Dialog open={showDialog} onOpenChange={setShowDialog}>
+          {showEdit && (<Dialog open={showDialog} onOpenChange={setShowDialog}>
             <DialogTrigger asChild>
               <Button data-testid="add-event-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Add Event</Button>
             </DialogTrigger>
@@ -99,7 +99,7 @@ const EventCalendar = () => {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+          </Dialog>)}
         </div>
       </div>
 

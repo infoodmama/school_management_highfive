@@ -416,7 +416,7 @@ const Fees = () => {
             <h2 className="text-2xl font-bold text-slate-800">Custom Fee Types</h2>
             <div className="flex gap-3">
               <Button data-testid="send-reminders-btn" onClick={async () => { try { const r = await api.sendFeeReminders(); toast.success(r.data.message); } catch (e) { toast.error('Failed to send reminders'); } }} variant="outline" className="font-bold rounded-xl bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200">Send Due Reminders</Button>
-              <Dialog open={showFeeTypeDialog} onOpenChange={(open) => { setShowFeeTypeDialog(open); if (!open) resetFeeTypeForm(); }}>
+              {showEdit && (<Dialog open={showFeeTypeDialog} onOpenChange={(open) => { setShowFeeTypeDialog(open); if (!open) resetFeeTypeForm(); }}>
               <DialogTrigger asChild>
                 <Button data-testid="add-fee-type-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Add Fee Type</Button>
               </DialogTrigger>
@@ -451,7 +451,7 @@ const Fees = () => {
                   </div>
                 </form>
               </DialogContent>
-            </Dialog>
+            </Dialog>)}
             </div>
           </div>
 

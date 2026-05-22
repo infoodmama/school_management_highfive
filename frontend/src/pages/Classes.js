@@ -102,7 +102,7 @@ const Classes = () => {
             Manage school classes and their sections
           </p>
         </div>
-        <Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetForm(); }}>
+        {showEdit && (<Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetForm(); }}>
           <DialogTrigger asChild>
             <Button data-testid="add-class-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform">
               <Plus className="w-5 h-5 mr-2" />
@@ -159,7 +159,7 @@ const Classes = () => {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+        </Dialog>)}
       </div>
 
       {loading ? (

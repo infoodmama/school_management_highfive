@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Plus, Upload, Download, Search, Edit, Trash2, TrendingUp, Filter, Eye, ArrowRight } from 'lucide-react';
-import { useAuth, canEdit, canSeeFullMobile, maskMobile } from '../lib/AuthContext';
+import { useAuth, canEdit, canExport, canSeeFullMobile, maskMobile } from '../lib/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 const Students = () => {
   const { role, perms } = useAuth();
   const showEdit = canEdit(perms);
+  const showExport = canExport(perms);
   const showFullMobile = canSeeFullMobile(perms);
   const navigate = useNavigate();
   const [students, setStudents] = useState([]);
@@ -261,7 +262,7 @@ const Students = () => {
           <p className="text-base font-medium text-slate-600 mt-1" style={{ fontFamily: 'Figtree' }}>Manage student records and information</p>
         </div>
         <div className="flex flex-wrap gap-3">
-          <Dialog open={showAddDialog} onOpenChange={(open) => { setShowAddDialog(open); if (!open) resetForm(); }}>
+          {showEdit && <Dialog open={showAddDialog} onOpenChange={(open) => { setShowAddDialog(open); if (!open) resetForm(); }}>
             <DialogTrigger asChild>
               <Button data-testid="add-student-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Add Student</Button>
             </DialogTrigger>
@@ -275,22 +276,22 @@ const Students = () => {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+          </Dialog>}
 
-          <label htmlFor="bulk-upload" className="cursor-pointer">
+          {showEdit && <label htmlFor="bulk-upload" className="cursor-pointer">
             <input id="bulk-upload" type="file" accept=".csv" onChange={handleBulkUpload} className="hidden" data-testid="bulk-upload-input" />
             <div className="inline-flex items-center px-4 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold rounded-xl active:scale-95 transition-transform"><Upload className="w-5 h-5 mr-2" />Bulk Upload</div>
-          </label>
+          </label>}
 
-          <Button data-testid="download-sample-csv" onClick={handleDownloadSample} variant="outline" className="font-bold rounded-xl"><Download className="w-5 h-5 mr-2" />Sample CSV</Button>
+          {showExport && <Button data-testid="download-sample-csv" onClick={handleDownloadSample} variant="outline" className="font-bold rounded-xl"><Download className="w-5 h-5 mr-2" />Sample CSV</Button>}
 
-          {selectedIds.length > 0 && (
+          {showEdit && selectedIds.length > 0 && (
             <Button data-testid="bulk-delete-btn" onClick={handleBulkDelete} className="bg-rose-500 hover:bg-rose-600 text-white font-bold rounded-xl active:scale-95 transition-transform">
               <Trash2 className="w-5 h-5 mr-2" />Delete ({selectedIds.length})
             </Button>
           )}
 
-          <Dialog open={showPromoteDialog} onOpenChange={(open) => { setShowPromoteDialog(open); if (!open) { setPromotePreview(null); setPromoteData({ fromClass: '', toClass: '' }); } }}>
+          {showEdit && <Dialog open={showPromoteDialog} onOpenChange={(open) => { setShowPromoteDialog(open); if (!open) { setPromotePreview(null); setPromoteData({ fromClass: '', toClass: '' }); } }}>
             <DialogTrigger asChild>
               <Button data-testid="promote-students-btn" variant="outline" className="font-bold rounded-xl bg-amber-100 text-amber-800 hover:bg-amber-200 border-amber-200"><TrendingUp className="w-5 h-5 mr-2" />Promote</Button>
             </DialogTrigger>
@@ -371,7 +372,7 @@ const Students = () => {
                 </div>
               )}
             </DialogContent>
-          </Dialog>
+          </Dialog>}
         </div>
       </div>
 

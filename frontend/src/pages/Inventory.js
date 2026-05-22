@@ -78,7 +78,7 @@ const Inventory = () => {
           <p className="text-base font-medium text-slate-600 mt-1" style={{ fontFamily: 'Figtree' }}>Track inward and outward inventory</p>
         </div>
         <div className="flex gap-3">
-          <Dialog open={showIssueDialog} onOpenChange={setShowIssueDialog}>
+          {showEdit && (<Dialog open={showIssueDialog} onOpenChange={setShowIssueDialog}>
             <DialogTrigger asChild>
               <Button data-testid="issue-inventory-btn" className="bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><ArrowRightFromLine className="w-5 h-5 mr-2" />Issue to Student</Button>
             </DialogTrigger>
@@ -100,8 +100,8 @@ const Inventory = () => {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
-          <Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetForm(); }}>
+          </Dialog>)}
+          {showEdit && (<Dialog open={showDialog} onOpenChange={(open) => { setShowDialog(open); if (!open) resetForm(); }}>
             <DialogTrigger asChild>
               <Button data-testid="add-inventory-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Add Item</Button>
             </DialogTrigger>
@@ -121,7 +121,7 @@ const Inventory = () => {
                 </div>
               </form>
             </DialogContent>
-          </Dialog>
+          </Dialog>)}
         </div>
       </div>
 

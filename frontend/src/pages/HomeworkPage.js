@@ -74,7 +74,7 @@ const HomeworkPage = () => {
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900" style={{ fontFamily: 'Nunito' }}>Homework</h1>
           <p className="text-base font-medium text-slate-600 mt-1" style={{ fontFamily: 'Figtree' }}>Assign and manage homework for classes</p>
         </div>
-        <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        {showEdit && (<Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogTrigger asChild>
             <Button data-testid="add-homework-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Assign Homework</Button>
           </DialogTrigger>
@@ -119,7 +119,7 @@ const HomeworkPage = () => {
               </div>
             </form>
           </DialogContent>
-        </Dialog>
+        </Dialog>)}
       </div>
 
       {/* Filters */}
