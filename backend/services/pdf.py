@@ -1,15 +1,28 @@
 """PDF invoice generation using ReportLab."""
 import io
+import base64
 import logging
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table as RLTable, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table as RLTable, TableStyle, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
 
 logger = logging.getLogger(__name__)
 
+
+def _decode_logo(logo_url):
+    """Return BytesIO of logo image from data: URI, else None."""
+    if not logo_url or not isinstance(logo_url, str):
+        return None
+    try:
+        if logo_url.startswith('data:'):
+            _, b64 = logo_url.split(',', 1)
+            return io.BytesIO(base64.b64decode(b64))
+    except Exception:
+        return None
+    return None
 
 
 def generate_invoice_pdf(payment_data, student_data, school_settings=None):
@@ -20,6 +33,7 @@ def generate_invoice_pdf(payment_data, student_data, school_settings=None):
 
     school_name = (school_settings or {}).get('schoolName', 'SchoolPro')
     school_address = (school_settings or {}).get('schoolAddress', '')
+    logo_io = _decode_logo((school_settings or {}).get('logoUrl', ''))
 
     purple_dark = colors.HexColor('#6B21A8')
     purple_light = colors.HexColor('#9333EA')
@@ -47,6 +61,17 @@ def generate_invoice_pdf(payment_data, student_data, school_settings=None):
     def build_receipt_copy(copy_type):
         """Build one receipt copy (Student/College)"""
         copy_elements = []
+
+        # Logo (if configured)
+        if logo_io is not None:
+            try:
+                logo_io.seek(0)
+                img = RLImage(logo_io, width=18*mm, height=18*mm)
+                img.hAlign = 'CENTER'
+                copy_elements.append(img)
+                copy_elements.append(Spacer(1, 1*mm))
+            except Exception as e:
+                logger.warning(f"Failed to render logo on invoice: {e}")
 
         # School Name
         name_style = ParagraphStyle('SN', parent=styles['Title'], fontSize=18, textColor=purple_dark, alignment=1, spaceAfter=1, leading=20)

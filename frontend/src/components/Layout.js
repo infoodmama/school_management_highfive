@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { GraduationCap, Users, ClipboardCheck, DollarSign, ShoppingCart, Settings, BookOpen, Package, CalendarDays, BookOpenCheck, UserCog, LogOut, Menu, X, ShieldCheck, BarChart3, KeyRound, AlertTriangle } from 'lucide-react';
 import { useAuth, canAccess } from '../lib/AuthContext';
+import { api } from '../lib/api';
 
 const allNavItems = [
   { path: '/', label: 'Dashboard', icon: GraduationCap },
@@ -26,8 +27,33 @@ const Layout = () => {
   const navigate = useNavigate();
   const { user, role, perms, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [branding, setBranding] = useState({ schoolName: 'SchoolPro', logoUrl: '' });
+  const [complaintCounts, setComplaintCounts] = useState({ overdue: 0, pending: 0 });
+
+  const isComplaintManager = role === 'super_admin' || role === 'admin_role';
+
+  useEffect(() => {
+    api.getSchoolSettings()
+      .then((r) => setBranding({ schoolName: r.data?.schoolName || 'SchoolPro', logoUrl: r.data?.logoUrl || '' }))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!isComplaintManager) return;
+    let active = true;
+    const fetchCounts = () => {
+      api.getComplaintsOverdue()
+        .then((r) => { if (active) setComplaintCounts({ overdue: r.data?.overdue || 0, pending: r.data?.pending || 0 }); })
+        .catch(() => {});
+    };
+    fetchCounts();
+    const id = setInterval(fetchCounts, 60000);
+    return () => { active = false; clearInterval(id); };
+  }, [isComplaintManager, location.pathname]);
 
   const navItems = allNavItems.filter((item) => canAccess(perms, item.path));
+  const isCustomName = branding.schoolName && branding.schoolName !== 'SchoolPro';
+  const complaintBadge = (complaintCounts.overdue || 0) + (complaintCounts.pending || 0);
 
   const handleLogout = () => { logout(); navigate('/'); };
 
@@ -44,25 +70,36 @@ const Layout = () => {
     <>
       <div className="p-5 flex-1 overflow-y-auto">
         <div className="flex items-center gap-3 mb-8">
-          <div className="w-11 h-11 bg-gradient-to-br from-sky-400 to-sky-600 rounded-2xl flex items-center justify-center flex-shrink-0">
-            <GraduationCap className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-lg font-extrabold text-slate-900" style={{ fontFamily: 'Nunito' }}>SchoolPro</h1>
-            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Management System</p>
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt="School logo" className="w-11 h-11 rounded-2xl object-cover flex-shrink-0 border border-slate-200 bg-white" />
+          ) : (
+            <div className="w-11 h-11 bg-gradient-to-br from-sky-400 to-sky-600 rounded-2xl flex items-center justify-center flex-shrink-0">
+              <GraduationCap className="w-6 h-6 text-white" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <h1 className="text-lg font-extrabold text-slate-900 truncate" style={{ fontFamily: 'Nunito' }}>{branding.schoolName}</h1>
+            {!isCustomName && <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Management System</p>}
           </div>
         </div>
         <nav className="space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
+            const showBadge = item.path === '/complaints' && isComplaintManager && complaintBadge > 0;
             return (
               <Link key={item.path} to={item.path} data-testid={`nav-${item.label.toLowerCase()}`}
                 onClick={() => setSidebarOpen(false)}
                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 active:scale-95 ${
                   isActive ? 'bg-sky-500 text-white shadow-lg' : 'text-slate-600 hover:bg-slate-100'
                 }`}>
-                <Icon className="w-5 h-5 flex-shrink-0" />{item.label}
+                <Icon className="w-5 h-5 flex-shrink-0" />
+                <span className="flex-1">{item.label}</span>
+                {showBadge && (
+                  <span data-testid="complaints-badge" className={`inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-[11px] font-extrabold ${complaintCounts.overdue > 0 ? 'bg-rose-500 text-white' : (isActive ? 'bg-white text-sky-600' : 'bg-amber-500 text-white')}`}>
+                    {complaintBadge}
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -95,10 +132,14 @@ const Layout = () => {
             <Menu className="w-6 h-6 text-slate-700" />
           </button>
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-sky-400 to-sky-600 rounded-xl flex items-center justify-center">
-              <GraduationCap className="w-4 h-4 text-white" />
-            </div>
-            <span className="text-base font-extrabold text-slate-900" style={{ fontFamily: 'Nunito' }}>SchoolPro</span>
+            {branding.logoUrl ? (
+              <img src={branding.logoUrl} alt="logo" className="w-8 h-8 rounded-xl object-cover border border-slate-200 bg-white" />
+            ) : (
+              <div className="w-8 h-8 bg-gradient-to-br from-sky-400 to-sky-600 rounded-xl flex items-center justify-center">
+                <GraduationCap className="w-4 h-4 text-white" />
+              </div>
+            )}
+            <span className="text-base font-extrabold text-slate-900 truncate max-w-[200px]" style={{ fontFamily: 'Nunito' }}>{branding.schoolName}</span>
           </div>
         </div>
         <button onClick={handleLogout} className="p-2 hover:bg-rose-50 rounded-xl"><LogOut className="w-5 h-5 text-rose-600" /></button>

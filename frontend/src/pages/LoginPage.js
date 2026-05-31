@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { GraduationCap, UserCog, Users } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/AuthContext';
@@ -15,6 +15,15 @@ const LoginPage = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [branding, setBranding] = useState({ schoolName: 'SchoolPro', logoUrl: '' });
+
+  useEffect(() => {
+    api.getSchoolSettings()
+      .then((r) => setBranding({ schoolName: r.data?.schoolName || 'SchoolPro', logoUrl: r.data?.logoUrl || '' }))
+      .catch(() => {});
+  }, []);
+
+  const isCustomName = branding.schoolName && branding.schoolName !== 'SchoolPro';
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -32,13 +41,17 @@ const LoginPage = () => {
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
       <div className="w-full max-w-2xl">
         {/* Header */}
-        <div className="flex items-center gap-3 mb-8 justify-center">
-          <div className="w-14 h-14 bg-gradient-to-br from-sky-400 to-sky-600 rounded-2xl flex items-center justify-center shadow-lg">
-            <GraduationCap className="w-8 h-8 text-white" />
-          </div>
+        <div className="flex items-center gap-3 mb-8 justify-center" data-testid="login-branding">
+          {branding.logoUrl ? (
+            <img src={branding.logoUrl} alt="School logo" data-testid="login-school-logo" className="w-14 h-14 rounded-2xl object-cover shadow-lg border border-slate-200 bg-white" />
+          ) : (
+            <div className="w-14 h-14 bg-gradient-to-br from-sky-400 to-sky-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <GraduationCap className="w-8 h-8 text-white" />
+            </div>
+          )}
           <div>
-            <h1 className="text-3xl font-extrabold text-slate-900" style={{ fontFamily: 'Nunito' }}>SchoolPro</h1>
-            <p className="text-sm text-slate-500">School Management System</p>
+            <h1 data-testid="login-school-name" className="text-3xl font-extrabold text-slate-900" style={{ fontFamily: 'Nunito' }}>{branding.schoolName}</h1>
+            {!isCustomName && <p className="text-sm text-slate-500">School Management System</p>}
           </div>
         </div>
 
