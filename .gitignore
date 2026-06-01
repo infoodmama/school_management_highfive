@@ -75,7 +75,7 @@ agenthub/agents/youtube/db
 
 # Build caches
 .cache/
-
+mongo-data/
 memory/test_credentials.md
 
 # Mobile development
