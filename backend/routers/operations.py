@@ -9,9 +9,11 @@ import csv
 import io
 import base64
 import logging
+
 from openpyxl import Workbook
 
-from db import db
+from db import db, client
+from motor.motor_asyncio import AsyncIOMotorClient
 from models import *
 from services.whatsapp import *
 from services.pdf import *
