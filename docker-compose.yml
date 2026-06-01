@@ -1,0 +1,46 @@
+services:
+  school_mongodb:
+    image: mongo:7.0
+    container_name: school_mongodb_30_5
+    restart: always
+    ports:
+      - "27029:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin123
+    volumes:
+      - ./mongo-data:/data/db
+    networks:
+      - school_network_30_5
+
+  school_backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: school_backend_30_5
+    restart: always
+    ports:
+      - "8009:8000"
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - school_mongodb
+    networks:
+      - school_network_30_5
+
+  school_frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: school_frontend_30_5
+    restart: always
+    ports:
+      - "8089:80"
+    depends_on:
+      - school_backend
+    networks:
+      - school_network_30_5
+
+networks:
+  school_network_30_5:
+    driver: bridge
