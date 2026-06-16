@@ -113,8 +113,8 @@ const Layout = () => {
   }, {});
   const groupOrder = ['main', 'academics', 'finance', 'people', 'admin'];
 
-  const sidebarWidth = collapsed ? 'lg:w-[72px]' : 'lg:w-56';
-  const mainOffset = collapsed ? 'lg:ml-[72px]' : 'lg:ml-56';
+  const sidebarWidth = collapsed ? 'lg:w-[75px]' : 'lg:w-[190px]';
+  const mainOffset = collapsed ? 'lg:ml-[75px]' : 'lg:ml-[190px]';
 
   const navProps = {
     collapsed,
@@ -185,8 +185,8 @@ const Layout = () => {
       </aside>
 
       {/* ============ Main content ============ */}
-      <main className={`${mainOffset} w-full transition-[margin] duration-300 ease-in-out`}>
-        <div className="px-4 sm:px-6 lg:px-8 pt-20 lg:pt-8 pb-12 max-w-[1600px] mx-auto">
+      <main className={`${mainOffset} w-full min-w-0 overflow-x-hidden transition-[margin] duration-300 ease-in-out`}>
+        <div className="px-4 sm:px-6 lg:px-7 pt-20 lg:pt-8 pb-12 max-w-full">
           <Outlet />
         </div>
       </main>
