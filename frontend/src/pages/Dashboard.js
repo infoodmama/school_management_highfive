@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, UserCheck, UserX, DollarSign, Sparkles, TrendingUp, ArrowUpRight } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/AuthContext';
 import { toast } from 'sonner';
 
 const greeting = () => {
@@ -11,6 +12,7 @@ const greeting = () => {
 };
 
 const Dashboard = () => {
+  const { user } = useAuth();
   const [stats, setStats] = useState({
     totalStudents: 0,
     presentToday: 0,
@@ -75,7 +77,7 @@ const Dashboard = () => {
             <div className="min-w-0">
               <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-200 bg-emerald-500/15 backdrop-blur-sm border border-emerald-400/20 px-3 py-1 rounded-full"><Sparkles className="w-3 h-3" />{schoolName}</span>
               <h1 className="text-3xl sm:text-4xl lg:text-[42px] font-extrabold text-white mt-3 tracking-tight leading-[1.1]" style={{ fontFamily: 'Nunito' }}>
-                {greeting()}, Admin
+                {greeting()}, {(user?.name || user?.username || 'Admin').split(' ')[0]}
               </h1>
               <p className="text-sm sm:text-base font-medium text-slate-300 mt-2 max-w-lg" style={{ fontFamily: 'Figtree' }}>
                 Here&apos;s a quick look at your school today. Everything is in good shape.

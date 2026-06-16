@@ -38,6 +38,15 @@
 
 ## CHANGELOG
 
+### 2026-02-28 (this session, part 5) — TOTAL ADMIN PORTAL REDESIGN + Collapsible Sidebar
+- **Brand new design system** (user choice: surprise me / emerald accent / consistent page headers): warm school-admin aesthetic with deep slate-950 sidebar + emerald-500 accents + light cream-tinted content.
+- **Layout** (`Layout.js` rewrite): dark slate-950 sidebar; nav grouped into **Academics / Finance / People / System**; active item shows emerald gradient bg + left accent bar + emerald-300 text; user footer with avatar, name, role, and logout. Mobile drawer slides in from the left with the same dark theme.
+- **Collapsible sidebar**: circular chevron button on the right edge toggles 256 px ↔ 72 px with 300 ms transition. Choice persisted in `localStorage['sidebar-collapsed']`. Auto-collapses on first load when `1024 ≤ window.innerWidth < 1100` (only if user hasn't set a preference).
+- **Consistent page header decoration**: `index.css` adds an emerald gradient vertical accent bar (5 px wide, rounded pill) before every `<main> h1.tracking-tight` — works automatically across all 12 admin pages without per-file edits. Cards get a refined dual-shadow.
+- **Dashboard refresh**: slate-950 → emerald-950 dark hero with radial blobs; greeting now personalises with the logged-in user's first name; stat cards switched to emerald/teal/rose/amber palette; quick-actions use emerald-teal, sky-indigo, amber-orange gradients.
+- **New shared component**: `PageHeader.js` available for future explicit headers (not yet adopted broadly; CSS rule covers existing pages).
+- **Testing** — `iteration_17.json`: 23/23 frontend checks pass (sidebar collapse + reload persistence + group headers + emerald accent on /students /classes /fees /attendance + mobile drawer + parent portal regression).
+
 ### 2026-02-28 (this session, part 4) — Global Loader + Major Design Refresh
 - **New global app loader** — `src/lib/loader.js` attaches axios interceptors that maintain a pending-request counter; `src/components/GlobalLoader.js` is a 3px top progress bar that fades in whenever any HTTP call is in flight. Mounted in Layout, LoginPage, and ParentPortal. Powered by a CSS keyframe `loader-bar` (in index.css).
 - **Classes page** — Simplified card: gradient tile with BookOpen icon stacked above the class number; removed the redundant "Class X" heading text; Edit/Delete icons are always visible (no longer hover-gated) and right-aligned with proper backgrounds.
