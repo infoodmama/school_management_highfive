@@ -24,6 +24,7 @@ const Complaints = () => {
   const [showDialog, setShowDialog] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', dueDate: '', priority: 'medium', photoUrl: '' });
   const [uploading, setUploading] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState(null);
 
   const load = useCallback(async () => {
     try {
@@ -165,7 +166,7 @@ const Complaints = () => {
                     <span className={c.isOverdue ? 'font-bold text-rose-600' : 'font-bold'}>Due: {c.dueDate}</span>
                     {c.notes && <span><span className="font-bold">Notes:</span> {c.notes}</span>}
                   </div>
-                  {c.photoUrl && <a href={c.photoUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 mt-2 px-3 py-1 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold text-xs"><ImageIcon className="w-3 h-3" />View Photo</a>}
+                  {c.photoUrl && <button type="button" onClick={() => setPhotoPreview({ url: c.photoUrl, title: c.title })} data-testid={`view-photo-${c.id}`} className="inline-flex items-center gap-1 mt-2 px-3 py-1 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold text-xs transition-colors active:scale-95"><ImageIcon className="w-3 h-3" />View Photo</button>}
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* Status updates: creator OR manager can move forward */}
@@ -186,6 +187,24 @@ const Complaints = () => {
           ))}
         </div>
       )}
+
+      {/* Photo preview dialog */}
+      <Dialog open={!!photoPreview} onOpenChange={(o) => { if (!o) setPhotoPreview(null); }}>
+        <DialogContent className="max-w-3xl p-0 overflow-hidden bg-slate-950 border-slate-800" data-testid="photo-preview-dialog">
+          <DialogHeader className="px-5 py-3 border-b border-white/10">
+            <DialogTitle className="text-white font-bold text-base truncate">{photoPreview?.title || 'Complaint photo'}</DialogTitle>
+          </DialogHeader>
+          <div className="bg-slate-950 flex items-center justify-center max-h-[75vh] overflow-auto">
+            {photoPreview && (
+              <img src={photoPreview.url} alt={photoPreview.title} data-testid="photo-preview-img" className="max-h-[75vh] w-auto object-contain" />
+            )}
+          </div>
+          <div className="px-5 py-3 flex justify-between items-center bg-slate-900 border-t border-white/10">
+            <a href={photoPreview?.url} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-sky-300 hover:text-sky-200">Open in new tab</a>
+            <button onClick={() => setPhotoPreview(null)} className="px-4 py-1.5 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors">Close</button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
