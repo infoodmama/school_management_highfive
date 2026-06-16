@@ -115,6 +115,7 @@ const Layout = () => {
 
   const sidebarWidth = collapsed ? 'lg:w-[75px]' : 'lg:w-[190px]';
   const mainOffset = collapsed ? 'lg:ml-[75px]' : 'lg:ml-[190px]';
+  const mainWidth = collapsed ? 'lg:w-[calc(100%-75px)]' : 'lg:w-[calc(100%-190px)]';
 
   const navProps = {
     collapsed,
@@ -185,8 +186,8 @@ const Layout = () => {
       </aside>
 
       {/* ============ Main content ============ */}
-      <main className={`${mainOffset} w-full min-w-0 overflow-x-hidden transition-[margin] duration-300 ease-in-out`}>
-        <div className="px-4 sm:px-6 lg:px-7 pt-20 lg:pt-8 pb-12 max-w-full">
+      <main className={`w-full ${mainWidth} ${mainOffset} min-w-0 transition-[margin,width] duration-300 ease-in-out`}>
+        <div className="px-4 sm:px-6 lg:px-7 pt-20 lg:pt-8 pb-12">
           <Outlet />
         </div>
       </main>
