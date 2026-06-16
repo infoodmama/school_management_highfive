@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { UserCheck, Calendar, Download, Send, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { UserCheck, Calendar, Download, Send, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth, canExport } from '../lib/AuthContext';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../components/ui/alert-dialog';
 
 const Attendance = () => {
   const { role, perms } = useAuth();
@@ -20,6 +21,8 @@ const Attendance = () => {
   const [takeAttendance, setTakeAttendance] = useState({ studentClass: '', section: '', date: new Date().toISOString().split('T')[0] });
   const [attendanceData, setAttendanceData] = useState([]);
   const [viewFilters, setViewFilters] = useState({ studentClass: '', section: '', startDate: '', endDate: '' });
+  const [showConfirmSave, setShowConfirmSave] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const loadClasses = useCallback(async () => {
     try { const r = await api.getClasses(); setClasses(r.data); } catch (e) { /* ignore */ }
@@ -64,13 +67,16 @@ const Attendance = () => {
 
   const handleSubmitAttendance = async () => {
     try {
+      setSaving(true);
       await api.markAttendance({ studentClass: takeAttendance.studentClass, section: takeAttendance.section, date: takeAttendance.date, records: attendanceData });
       const absentRecords = attendanceData.filter((r) => r.status === 'absent');
       if (absentRecords.length > 0) {
         await api.sendAttendanceAlerts({ absentRecords: absentRecords.map((r) => ({ ...r, studentClass: takeAttendance.studentClass, section: takeAttendance.section, date: takeAttendance.date })) });
       }
       toast.success('Attendance marked successfully');
+      setShowConfirmSave(false);
     } catch (error) { toast.error('Failed to mark attendance'); }
+    finally { setSaving(false); }
   };
 
   const handleViewAttendance = async () => {
@@ -241,10 +247,34 @@ const Attendance = () => {
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button data-testid="submit-attendance-btn" onClick={handleSubmitAttendance} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl px-8 active:scale-95 transition-transform">
+                <Button data-testid="submit-attendance-btn" onClick={() => {
+                  if (unmarkedCount > 0) { toast.error(`${unmarkedCount} student(s) unmarked. Please mark all before saving.`); return; }
+                  setShowConfirmSave(true);
+                }} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl px-8 active:scale-95 transition-transform">
                   <Send className="w-5 h-5 mr-2" />Submit Attendance
                 </Button>
               </div>
+
+              <AlertDialog open={showConfirmSave} onOpenChange={(o) => { if (!saving) setShowConfirmSave(o); }}>
+                <AlertDialogContent data-testid="confirm-save-attendance">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Save attendance for {takeAttendance.date}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Class {takeAttendance.studentClass} - Section {takeAttendance.section} · {attendanceData.length} students<br />
+                      <span className="inline-flex items-center gap-1.5 mt-2 mr-3 text-emerald-700 font-semibold">{presentCount} Present</span>
+                      <span className="inline-flex items-center gap-1.5 mr-3 text-rose-700 font-semibold">{absentCount} Absent</span>
+                      <span className="inline-flex items-center gap-1.5 text-orange-700 font-semibold">{holidayCount} Holiday</span>
+                      {absentCount > 0 && <><br /><span className="text-amber-700 font-medium mt-1 inline-block">WhatsApp alerts will be sent to parents of {absentCount} absent student{absentCount > 1 ? 's' : ''}.</span></>}
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="cancel-save-attendance" disabled={saving}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction data-testid="confirm-save-btn" disabled={saving} onClick={(e) => { e.preventDefault(); handleSubmitAttendance(); }} className="bg-sky-500 hover:bg-sky-600">
+                      {saving ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Saving...</> : 'Yes, Save'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </>
           )}
         </TabsContent>
