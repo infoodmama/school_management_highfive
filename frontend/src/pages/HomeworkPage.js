@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { api } from '../lib/api';
-import { useAuth, canEdit } from '../lib/AuthContext';
+import { useAuth, canCreate, canDelete } from '../lib/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 
 const HomeworkPage = () => {
   const { user, role, perms } = useAuth();
-  const showEdit = canEdit(perms, 'homework');
+  const showCreate = canCreate(perms, 'homework');
+  const showDelete = canDelete(perms, 'homework');
   const defaultAssignedBy = user?.name || user?.username || '';
   const [homework, setHomework] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -74,7 +75,7 @@ const HomeworkPage = () => {
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900" style={{ fontFamily: 'Nunito' }}>Homework</h1>
           <p className="text-base font-medium text-slate-600 mt-1" style={{ fontFamily: 'Figtree' }}>Assign and manage homework for classes</p>
         </div>
-        {showEdit && (<Dialog open={showDialog} onOpenChange={setShowDialog}>
+        {showCreate && (<Dialog open={showDialog} onOpenChange={setShowDialog}>
           <DialogTrigger asChild>
             <Button data-testid="add-homework-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Assign Homework</Button>
           </DialogTrigger>
@@ -166,7 +167,7 @@ const HomeworkPage = () => {
                     {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold transition-colors">{hw.attachmentName?.endsWith('.pdf') ? 'PDF' : 'File'}</a>}
                   </div>
                 </div>
-                {showEdit && <button onClick={() => handleDelete(hw.id)} data-testid={`delete-homework-${hw.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors ml-2"><Trash2 className="w-4 h-4 text-rose-600" /></button>}
+                {showDelete && <button onClick={() => handleDelete(hw.id)} data-testid={`delete-homework-${hw.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors ml-2"><Trash2 className="w-4 h-4 text-rose-600" /></button>}
               </div>
             </div>
           ))}
