@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Edit } from 'lucide-react';
 import { api } from '../lib/api';
-import { useAuth, canCreate, canDelete } from '../lib/AuthContext';
+import { useAuth, canCreate, canDelete, canEdit } from '../lib/AuthContext';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -13,11 +13,13 @@ const HomeworkPage = () => {
   const { user, role, perms } = useAuth();
   const showCreate = canCreate(perms, 'homework');
   const showDelete = canDelete(perms, 'homework');
+  const showEdit = canEdit(perms, 'homework');
   const defaultAssignedBy = user?.name || user?.username || '';
   const [homework, setHomework] = useState([]);
   const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [filters, setFilters] = useState({ studentClass: '', section: '' });
   const [form, setForm] = useState({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: defaultAssignedBy, attachmentUrl: '', attachmentName: '' });
 
@@ -46,15 +48,43 @@ const HomeworkPage = () => {
 
   const getSections = (cls) => { const f = classes.find((c) => c.className === cls); return f ? f.sections : []; };
 
+  const resetForm = () => {
+    setForm({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: defaultAssignedBy, attachmentUrl: '', attachmentName: '' });
+    setEditingId(null);
+  };
+
+  const openCreate = () => { resetForm(); setShowDialog(true); };
+
+  const openEdit = (hw) => {
+    setEditingId(hw.id);
+    setForm({
+      studentClass: hw.studentClass || '',
+      section: hw.section || '',
+      subject: hw.subject || '',
+      title: hw.title || '',
+      description: hw.description || '',
+      dueDate: hw.dueDate || '',
+      assignedBy: hw.assignedBy || defaultAssignedBy,
+      attachmentUrl: hw.attachmentUrl || '',
+      attachmentName: hw.attachmentName || '',
+    });
+    setShowDialog(true);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await api.createHomework(form);
-      toast.success('Homework assigned');
+      if (editingId) {
+        await api.updateHomework(editingId, form);
+        toast.success('Homework updated');
+      } else {
+        await api.createHomework(form);
+        toast.success('Homework assigned');
+      }
       setShowDialog(false);
-      setForm({ studentClass: '', section: '', subject: '', title: '', description: '', dueDate: '', assignedBy: defaultAssignedBy, attachmentUrl: '', attachmentName: '' });
+      resetForm();
       loadHomework();
-    } catch (error) { toast.error('Failed to assign homework'); }
+    } catch (error) { toast.error(editingId ? 'Failed to update' : 'Failed to assign homework'); }
   };
 
   const handleDelete = async (id) => {
@@ -75,12 +105,15 @@ const HomeworkPage = () => {
           <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900" style={{ fontFamily: 'Nunito' }}>Homework</h1>
           <p className="text-base font-medium text-slate-600 mt-1" style={{ fontFamily: 'Figtree' }}>Assign and manage homework for classes</p>
         </div>
-        {showCreate && (<Dialog open={showDialog} onOpenChange={setShowDialog}>
-          <DialogTrigger asChild>
-            <Button data-testid="add-homework-btn" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Assign Homework</Button>
-          </DialogTrigger>
+        {showCreate && (
+          <Button data-testid="add-homework-btn" onClick={openCreate} className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl active:scale-95 transition-transform"><Plus className="w-5 h-5 mr-2" />Assign Homework</Button>
+        )}
+      </div>
+
+      {/* Shared Create / Edit dialog (mounted when user can create OR edit) */}
+      {(showCreate || showEdit) && (<Dialog open={showDialog} onOpenChange={(o) => { setShowDialog(o); if (!o) resetForm(); }}>
           <DialogContent className="max-w-lg">
-            <DialogHeader><DialogTitle className="text-2xl font-bold">Assign Homework</DialogTitle></DialogHeader>
+            <DialogHeader><DialogTitle className="text-2xl font-bold">{editingId ? 'Edit Homework' : 'Assign Homework'}</DialogTitle></DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -115,13 +148,12 @@ const HomeworkPage = () => {
                 {form.attachmentName && <p className="text-sm text-emerald-600 font-medium mt-1">Attached: {form.attachmentName}</p>}
               </div>
               <div className="flex justify-end gap-3 pt-4">
-                <Button type="button" variant="outline" onClick={() => setShowDialog(false)} className="rounded-xl">Cancel</Button>
-                <Button data-testid="submit-homework-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">Assign</Button>
+                <Button type="button" variant="outline" onClick={() => { setShowDialog(false); resetForm(); }} className="rounded-xl">Cancel</Button>
+                <Button data-testid="submit-homework-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">{editingId ? 'Update' : 'Assign'}</Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>)}
-      </div>
 
       {/* Filters */}
       <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
@@ -167,7 +199,10 @@ const HomeworkPage = () => {
                     {hw.attachmentUrl && <a href={hw.attachmentUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 px-2 py-0.5 bg-sky-100 text-sky-700 hover:bg-sky-200 rounded-lg font-bold transition-colors">{hw.attachmentName?.endsWith('.pdf') ? 'PDF' : 'File'}</a>}
                   </div>
                 </div>
-                {showDelete && <button onClick={() => handleDelete(hw.id)} data-testid={`delete-homework-${hw.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors ml-2"><Trash2 className="w-4 h-4 text-rose-600" /></button>}
+                <div className="flex items-center gap-1 ml-2">
+                  {showEdit && <button onClick={() => openEdit(hw)} data-testid={`edit-homework-${hw.id}`} className="p-2 hover:bg-sky-100 rounded-lg transition-colors" aria-label="Edit homework"><Edit className="w-4 h-4 text-sky-600" /></button>}
+                  {showDelete && <button onClick={() => handleDelete(hw.id)} data-testid={`delete-homework-${hw.id}`} className="p-2 hover:bg-rose-100 rounded-lg transition-colors" aria-label="Delete homework"><Trash2 className="w-4 h-4 text-rose-600" /></button>}
+                </div>
               </div>
             </div>
           ))}
