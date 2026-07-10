@@ -35,24 +35,29 @@ def _substitute_placeholders(obj, vars_dict):
 
 
 async def _get_custom_template(event_key):
-    """Return (name, components_list) if super admin configured a custom template for this event, else (None, None)."""
+    """Return (name, components_list, enabled) if super admin configured a custom template for this event.
+    Returns (None, None, enabled_flag) when only enabled flag exists but no template body — caller falls back to defaults but honors enabled.
+    """
     doc = await db.settings.find_one({"type": "whatsapp_templates"}, {"_id": 0})
     if not doc:
-        return None, None
+        return None, None, True
     t = doc.get(event_key) or {}
+    enabled = t.get("enabled", True)
+    if enabled is None:
+        enabled = True
     name = (t.get("name") or "").strip()
     raw = (t.get("componentsJson") or "").strip()
     if not name or not raw:
-        return None, None
+        return None, None, enabled
     try:
         components = json.loads(raw)
         if not isinstance(components, list):
             logger.warning(f"Custom template '{event_key}' components is not a list, ignoring")
-            return None, None
-        return name, components
+            return None, None, enabled
+        return name, components, enabled
     except Exception as e:
         logger.warning(f"Failed to parse custom template JSON for {event_key}: {e}")
-        return None, None
+        return None, None, enabled
 
 
 async def send_wa_template(mobile, template_name, components, settings=None):
@@ -85,8 +90,10 @@ async def send_wa_template(mobile, template_name, components, settings=None):
 
 async def _send_custom_or_default(event_key, vars_dict, default_name, default_components, mobile, settings=None):
     """If admin configured a custom template for event_key, substitute placeholders and send.
-    Otherwise fall back to the default template name + components."""
-    custom_name, custom_components = await _get_custom_template(event_key)
+    Otherwise fall back to the default template name + components. Honors enabled flag."""
+    custom_name, custom_components, enabled = await _get_custom_template(event_key)
+    if not enabled:
+        return {"success": False, "message": f"{event_key} notifications disabled by admin", "skipped": True}
     if custom_name and custom_components is not None:
         name = custom_name
         components = _substitute_placeholders(custom_components, vars_dict)
@@ -145,6 +152,26 @@ async def send_event_message(mobile, event_name, event_date, settings=None):
         ]}
     ]
     return await _send_custom_or_default("event", vars_dict, "holi", default_components, mobile, settings)
+
+
+async def send_marks_message(mobile, student_name, exam_name, class_name, section, marks_summary, settings=None):
+    """Send exam-result notification. marks_summary is a plain-text list like 'Math: 85/100, Science: 78/100'."""
+    vars_dict = {
+        "student_name": student_name,
+        "exam_name": exam_name,
+        "class_name": class_name,
+        "section": section,
+        "marks_summary": marks_summary,
+    }
+    default_components = [
+        {"type": "body", "parameters": [
+            {"type": "text", "text": student_name},
+            {"type": "text", "text": exam_name},
+            {"type": "text", "text": f"{class_name}-{section}"},
+            {"type": "text", "text": marks_summary},
+        ]}
+    ]
+    return await _send_custom_or_default("marks", vars_dict, "marks_result", default_components, mobile, settings)
 
 # Backward-compat wrapper
 async def send_whatsapp_message(mobile, message, settings=None):

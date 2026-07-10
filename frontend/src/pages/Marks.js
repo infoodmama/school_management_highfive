@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart3, Upload, Download, Filter, Trophy, GitCompareArrows, Book, Plus, Trash2, Edit } from 'lucide-react';
+import { BarChart3, Upload, Download, Filter, Trophy, GitCompareArrows, Book, Plus, Trash2, Edit, Send, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth, canEdit } from '../lib/AuthContext';
 import { toast } from 'sonner';
@@ -139,6 +139,33 @@ const Marks = () => {
       toast.success(`Deleted ${r.data.deleted} records`);
       loadView(); loadDistinct();
     } catch (e) { toast.error('Bulk delete failed'); }
+  };
+
+  const [sendingResults, setSendingResults] = useState(false);
+  const handleSendResults = async () => {
+    if (!viewExam) { toast.error('Select an exam first to send results'); return; }
+    const scope = [];
+    if (viewClass) scope.push(`Class ${viewClass}`);
+    if (viewSection) scope.push(`Section ${viewSection}`);
+    scope.push(`Exam ${viewExam}`);
+    if (!window.confirm(`Send WhatsApp results to parents for: ${scope.join(' / ')}?`)) return;
+    try {
+      setSendingResults(true);
+      const payload = { examName: viewExam };
+      if (viewClass) payload.studentClass = viewClass;
+      if (viewSection) payload.section = viewSection;
+      const r = await api.sendExamResults(payload);
+      const { sent = 0, skipped = 0, failed = 0, disabled = false, message } = r.data || {};
+      if (disabled) {
+        toast.warning('Marks notifications are turned OFF in Settings → Templates. Enable them to send.', { duration: 8000 });
+      } else if (message && sent === 0) {
+        toast.info(message);
+      } else {
+        toast.success(`Sent ${sent} · Skipped ${skipped} · Failed ${failed}`, { duration: 8000 });
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.detail || 'Failed to send results');
+    } finally { setSendingResults(false); }
   };
 
   const parseCsv = (text) => {
@@ -374,9 +401,16 @@ const Marks = () => {
             <div className="bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6">
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <p className="text-sm font-bold text-slate-700">{viewRows.length} record(s)</p>
-                {showAnalytics && (viewClass || viewSection || viewExam || viewSubject) && (
-                  <Button data-testid="marks-bulk-delete-btn" onClick={handleBulkDelete} variant="outline" className="text-rose-600 border-rose-200 hover:bg-rose-50 font-bold rounded-xl"><Trash2 className="w-4 h-4 mr-2" />Delete All Matching</Button>
-                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {viewExam && role === 'super_admin' && (
+                    <Button data-testid="marks-send-results-btn" onClick={handleSendResults} disabled={sendingResults} className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-xl">
+                      {sendingResults ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Sending...</> : <><Send className="w-4 h-4 mr-2" />Send Results to Parents</>}
+                    </Button>
+                  )}
+                  {showAnalytics && (viewClass || viewSection || viewExam || viewSubject) && (
+                    <Button data-testid="marks-bulk-delete-btn" onClick={handleBulkDelete} variant="outline" className="text-rose-600 border-rose-200 hover:bg-rose-50 font-bold rounded-xl"><Trash2 className="w-4 h-4 mr-2" />Delete All Matching</Button>
+                  )}
+                </div>
               </div>
               <Table>
                 <TableHeader><TableRow><TableHead>Student ID</TableHead><TableHead>Name</TableHead><TableHead>Class</TableHead><TableHead>Exam</TableHead><TableHead>Subject</TableHead><TableHead className="text-right">Marks</TableHead><TableHead className="text-right">%</TableHead>{showAnalytics && <TableHead className="text-center">Actions</TableHead>}</TableRow></TableHeader>

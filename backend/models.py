@@ -161,11 +161,13 @@ class WhatsAppSettings(BaseModel):
 class WhatsAppTemplate(BaseModel):
     name: str = ""
     componentsJson: str = ""  # raw JSON string, may contain {{placeholders}}
+    enabled: bool = True
 
 class WhatsAppTemplates(BaseModel):
     absent: WhatsAppTemplate = WhatsAppTemplate()
     fee_paid: WhatsAppTemplate = WhatsAppTemplate()
     event: WhatsAppTemplate = WhatsAppTemplate()
+    marks: WhatsAppTemplate = WhatsAppTemplate()
 
 class SchoolSettings(BaseModel):
     schoolName: str

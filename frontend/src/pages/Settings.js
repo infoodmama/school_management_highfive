@@ -6,6 +6,7 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Textarea } from '../components/ui/textarea';
+import { Switch } from '../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 
 const EVENT_DEFS = [
@@ -59,6 +60,22 @@ const EVENT_DEFS = [
   }
 ]`,
   },
+  {
+    key: 'marks',
+    label: 'Marks — Exam Result',
+    placeholders: ['{{student_name}}', '{{exam_name}}', '{{class_name}}', '{{section}}', '{{marks_summary}}'],
+    example: `[
+  {
+    "type": "body",
+    "parameters": [
+      {"type": "text", "text": "{{student_name}}"},
+      {"type": "text", "text": "{{exam_name}}"},
+      {"type": "text", "text": "{{class_name}}-{{section}}"},
+      {"type": "text", "text": "{{marks_summary}}"}
+    ]
+  }
+]`,
+  },
 ];
 
 const Settings = () => {
@@ -69,9 +86,10 @@ const Settings = () => {
   const [wa, setWa] = useState({ phoneNumberId: '', accessToken: '' });
   const [school, setSchool] = useState({ schoolName: '', schoolAddress: '', logoUrl: '' });
   const [templates, setTemplates] = useState({
-    absent: { name: '', componentsJson: '' },
-    fee_paid: { name: '', componentsJson: '' },
-    event: { name: '', componentsJson: '' },
+    absent: { name: '', componentsJson: '', enabled: true },
+    fee_paid: { name: '', componentsJson: '', enabled: true },
+    event: { name: '', componentsJson: '', enabled: true },
+    marks: { name: '', componentsJson: '', enabled: true },
   });
 
   useEffect(() => { loadSettings(); }, []);
@@ -87,9 +105,10 @@ const Settings = () => {
       setWa(waR.data);
       setSchool({ schoolName: schR.data.schoolName || '', schoolAddress: schR.data.schoolAddress || '', logoUrl: schR.data.logoUrl || '' });
       setTemplates({
-        absent: tplR.data.absent || { name: '', componentsJson: '' },
-        fee_paid: tplR.data.fee_paid || { name: '', componentsJson: '' },
-        event: tplR.data.event || { name: '', componentsJson: '' },
+        absent: { enabled: true, ...(tplR.data.absent || {}) },
+        fee_paid: { enabled: true, ...(tplR.data.fee_paid || {}) },
+        event: { enabled: true, ...(tplR.data.event || {}) },
+        marks: { enabled: true, ...(tplR.data.marks || {}) },
       });
     } catch (e) { toast.error('Failed to load settings'); }
     finally { setLoading(false); }
@@ -128,11 +147,15 @@ const Settings = () => {
   };
 
   const resetTemplate = (key) => {
-    setTemplates((t) => ({ ...t, [key]: { name: '', componentsJson: '' } }));
+    setTemplates((t) => ({ ...t, [key]: { name: '', componentsJson: '', enabled: t[key]?.enabled ?? true } }));
   };
 
   const loadExample = (def) => {
-    setTemplates((t) => ({ ...t, [def.key]: { name: t[def.key]?.name || '', componentsJson: def.example } }));
+    setTemplates((t) => ({ ...t, [def.key]: { ...(t[def.key] || {}), name: t[def.key]?.name || '', componentsJson: def.example, enabled: t[def.key]?.enabled ?? true } }));
+  };
+
+  const toggleEnabled = (key) => {
+    setTemplates((t) => ({ ...t, [key]: { ...(t[key] || {}), enabled: !(t[key]?.enabled ?? true) } }));
   };
 
   if (loading) return <div className="flex items-center justify-center h-96"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-500"></div></div>;
@@ -224,18 +247,28 @@ const Settings = () => {
 
             <form onSubmit={handleSaveTemplates} className="space-y-6">
               {EVENT_DEFS.map((def) => {
-                const t = templates[def.key] || { name: '', componentsJson: '' };
+                const t = templates[def.key] || { name: '', componentsJson: '', enabled: true };
+                const enabled = t.enabled !== false;
                 return (
-                  <div key={def.key} data-testid={`tpl-card-${def.key}`} className="border border-slate-200 rounded-2xl p-4 sm:p-5 bg-slate-50/40">
+                  <div key={def.key} data-testid={`tpl-card-${def.key}`} className={`border rounded-2xl p-4 sm:p-5 transition-colors ${enabled ? 'border-slate-200 bg-slate-50/40' : 'border-slate-200 bg-slate-100/70 opacity-80'}`}>
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-                      <h3 className="text-lg font-bold text-slate-900">{def.label}</h3>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-3">
+                        <h3 className={`text-lg font-bold ${enabled ? 'text-slate-900' : 'text-slate-500'}`}>{def.label}</h3>
+                        <span className={`text-[10px] font-extrabold uppercase tracking-widest px-2 py-0.5 rounded-full ${enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{enabled ? 'On' : 'Off'}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-500">Notifications</span>
+                          <Switch data-testid={`tpl-toggle-${def.key}`} checked={enabled} onCheckedChange={() => toggleEnabled(def.key)} />
+                        </div>
+                        <span className="text-slate-300 hidden sm:inline">|</span>
                         <button type="button" onClick={() => loadExample(def)} data-testid={`tpl-example-${def.key}`} className="text-xs font-bold text-sky-600 hover:underline">Load example</button>
-                        <span className="text-slate-300">|</span>
+                        <span className="text-slate-300">·</span>
                         <button type="button" onClick={() => resetTemplate(def.key)} data-testid={`tpl-reset-${def.key}`} className="text-xs font-bold text-rose-600 hover:underline">Use default</button>
                       </div>
                     </div>
 
+                    <fieldset disabled={!enabled} className={enabled ? '' : 'opacity-50 pointer-events-none'}>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                       <div className="lg:col-span-1">
                         <Label className="text-sm font-bold">Template Name</Label>
@@ -268,6 +301,7 @@ const Settings = () => {
                         />
                       </div>
                     </div>
+                    </fieldset>
                   </div>
                 );
               })}

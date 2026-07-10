@@ -135,6 +135,7 @@ export const api = {
   getMarksStats: (params) => axios.get(`${API}/marks/stats`, { params }),
   deleteMark: (id) => axios.delete(`${API}/marks/${id}`),
   bulkDeleteMarks: (data) => axios.post(`${API}/marks/bulk-delete`, data),
+  sendExamResults: (data) => axios.post(`${API}/marks/send-exam-notifications`, data),
 
   // Subjects
   getSubjects: (params) => axios.get(`${API}/subjects`, { params }),

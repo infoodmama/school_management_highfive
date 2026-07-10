@@ -270,6 +270,87 @@ async def create_marks_bulk(data: MarksBulkCreate):
         created += 1
     return {"created": created, "errors": errors}
 
+
+@router.post("/marks/send-exam-notifications")
+async def send_exam_notifications(payload: Dict):
+    """Send WhatsApp result notification per student for a finalized exam.
+
+    Body: { examName: str (required), studentClass?: str, section?: str }
+    Returns: { sent, skipped, failed, disabled, details: [...] }
+    """
+    exam_name = (payload.get('examName') or '').strip()
+    if not exam_name:
+        raise HTTPException(status_code=400, detail="examName is required")
+    student_class = payload.get('studentClass')
+    section = payload.get('section')
+
+    query = {"examName": exam_name}
+    if student_class: query['studentClass'] = student_class
+    if section: query['section'] = section
+    marks = await db.marks.find(query, {"_id": 0}).to_list(10000)
+    if not marks:
+        return {"sent": 0, "skipped": 0, "failed": 0, "disabled": False, "details": [], "message": "No marks found for the given filter"}
+
+    # Group by student
+    by_student: Dict[str, Dict] = {}
+    for m in marks:
+        sid = m.get('studentId')
+        if not sid:
+            continue
+        entry = by_student.setdefault(sid, {"marks": [], "studentClass": m.get('studentClass', ''), "section": m.get('section', ''), "studentName": m.get('studentName', ''), "studentCode": m.get('studentCode', '')})
+        entry["marks"].append(m)
+
+    # Load WhatsApp settings once
+    wa_settings = await get_wa_settings()
+    if not wa_settings:
+        return {"sent": 0, "skipped": 0, "failed": len(by_student), "disabled": False,
+                "message": "WhatsApp is not configured. Please set Phone Number ID and Access Token in Settings."}
+
+    sent = 0
+    skipped = 0
+    failed = 0
+    disabled_flag = False
+    details = []
+
+    for sid, entry in by_student.items():
+        # Fetch parent mobile from student record
+        student = await db.students.find_one({"id": sid}, {"_id": 0}) or await db.students.find_one({"studentCode": entry.get('studentCode')}, {"_id": 0})
+        mobile = (student or {}).get('parentMobile', '').strip()
+        student_name = (student or {}).get('name') or entry.get('studentName') or 'Student'
+        if not mobile:
+            skipped += 1
+            details.append({"studentId": sid, "studentName": student_name, "status": "skipped", "reason": "no parent mobile"})
+            continue
+
+        # Build marks_summary
+        parts = []
+        for m in sorted(entry["marks"], key=lambda x: x.get('subject', '')):
+            parts.append(f"{m.get('subject', '')}: {m.get('marks', 0)}/{m.get('maxMarks', 100)}")
+        marks_summary = ", ".join(parts)
+
+        result = await send_marks_message(
+            mobile=mobile,
+            student_name=student_name,
+            exam_name=exam_name,
+            class_name=entry.get('studentClass', ''),
+            section=entry.get('section', ''),
+            marks_summary=marks_summary,
+            settings=wa_settings,
+        )
+        if result.get('skipped'):
+            disabled_flag = True
+            skipped += 1
+            details.append({"studentId": sid, "studentName": student_name, "status": "disabled", "reason": result.get('message')})
+        elif result.get('success'):
+            sent += 1
+            details.append({"studentId": sid, "studentName": student_name, "status": "sent"})
+        else:
+            failed += 1
+            details.append({"studentId": sid, "studentName": student_name, "status": "failed", "reason": result.get('message', 'unknown')})
+
+    return {"sent": sent, "skipped": skipped, "failed": failed, "disabled": disabled_flag, "totalStudents": len(by_student), "details": details}
+
+
 @router.get("/marks")
 async def get_marks(studentId: Optional[str] = None, studentClass: Optional[str] = None,
                     section: Optional[str] = None, examName: Optional[str] = None,

@@ -100,20 +100,26 @@ async def update_school_settings(data: SchoolSettings):
 
 @router.get("/settings/whatsapp-templates")
 async def get_whatsapp_templates():
+    empty = {"name": "", "componentsJson": "", "enabled": True}
     doc = await db.settings.find_one({"type": "whatsapp_templates"}, {"_id": 0})
     if not doc:
-        return {"absent": {"name": "", "componentsJson": ""}, "fee_paid": {"name": "", "componentsJson": ""}, "event": {"name": "", "componentsJson": ""}}
+        return {"absent": empty, "fee_paid": empty, "event": empty, "marks": empty}
+    def _norm(entry):
+        if not entry:
+            return empty
+        return {"name": entry.get("name", ""), "componentsJson": entry.get("componentsJson", ""), "enabled": entry.get("enabled", True) if entry.get("enabled") is not None else True}
     return {
-        "absent": doc.get("absent") or {"name": "", "componentsJson": ""},
-        "fee_paid": doc.get("fee_paid") or {"name": "", "componentsJson": ""},
-        "event": doc.get("event") or {"name": "", "componentsJson": ""},
+        "absent": _norm(doc.get("absent")),
+        "fee_paid": _norm(doc.get("fee_paid")),
+        "event": _norm(doc.get("event")),
+        "marks": _norm(doc.get("marks")),
     }
 
 @router.put("/settings/whatsapp-templates")
 async def update_whatsapp_templates(data: WhatsAppTemplates):
     # Validate componentsJson is valid JSON (when provided)
     import json as _json
-    for key in ("absent", "fee_paid", "event"):
+    for key in ("absent", "fee_paid", "event", "marks"):
         t = getattr(data, key)
         if t.componentsJson and t.componentsJson.strip():
             try:
@@ -126,6 +132,7 @@ async def update_whatsapp_templates(data: WhatsAppTemplates):
             "absent": data.absent.model_dump(),
             "fee_paid": data.fee_paid.model_dump(),
             "event": data.event.model_dump(),
+            "marks": data.marks.model_dump(),
         }},
         upsert=True
     )
