@@ -273,7 +273,24 @@ async def parent_dashboard(student_id: str):
     present_days = sum(1 for a in attendance if a['status'] == 'present')
     absent_days = sum(1 for a in attendance if a['status'] == 'absent')
     payments = await db.fee_payments.find({"studentId": student_id}, {"_id": 0}).to_list(100)
-    events = await db.events.find({}, {"_id": 0}).to_list(100)
+    # Events — school-wide OR matching student's class/section
+    student_class = student.get('studentClass', '')
+    student_section = student.get('section', '')
+    event_query = {"$or": [
+        # school-wide
+        {"$and": [
+            {"$or": [{"studentClass": {"$exists": False}}, {"studentClass": None}, {"studentClass": ""}]},
+            {"$or": [{"section": {"$exists": False}}, {"section": None}, {"section": ""}]},
+        ]},
+        # class-level (section empty)
+        {"$and": [
+            {"studentClass": student_class},
+            {"$or": [{"section": {"$exists": False}}, {"section": None}, {"section": ""}]},
+        ]},
+        # class + section exact
+        {"studentClass": student_class, "section": student_section},
+    ]}
+    events = await db.events.find(event_query, {"_id": 0}).to_list(100)
     homework_cutoff = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
     homework = await db.homework.find({"studentClass": student.get('studentClass', ''), "section": student.get('section', ''), "createdAt": {"$gte": homework_cutoff}}, {"_id": 0}).to_list(100)
     # Fallback: if createdAt is stored as ISO string, also get by dueDate

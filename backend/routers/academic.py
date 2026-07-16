@@ -491,20 +491,44 @@ async def create_event(event: EventCreate):
     doc = obj.model_dump()
     doc['createdAt'] = doc['createdAt'].isoformat()
     await db.events.insert_one(doc)
-    # Send WhatsApp notification to all students if enabled
+    # Send WhatsApp notification — school-wide OR class/section-scoped
     if event.sendNotification:
         settings_doc = await get_wa_settings()
         if settings_doc:
-            students = await db.students.find({}, {"_id": 0, "mobile": 1}).to_list(10000)
+            student_query = {}
+            if event.studentClass: student_query['studentClass'] = event.studentClass
+            if event.section: student_query['section'] = event.section
+            students = await db.students.find(student_query, {"_id": 0, "mobile": 1}).to_list(10000)
             for student in students:
                 if student.get('mobile'):
                     await send_event_message(student['mobile'], event.title, event.date, settings_doc)
     return obj
 
 @router.get("/events")
-async def get_events(month: Optional[str] = None):
+async def get_events(month: Optional[str] = None, studentClass: Optional[str] = None, section: Optional[str] = None):
     query = {}
-    if month: query['date'] = {'$regex': f'^{month}'}
+    if month:
+        query['date'] = {'$regex': f'^{month}'}
+    # Class/section filter: return school-wide (no target set) + events matching this class/section.
+    # A school-wide event has neither studentClass nor section set (or both null/empty).
+    if studentClass or section:
+        or_clauses = [
+            # school-wide events (studentClass missing or empty AND section missing or empty)
+            {"$and": [
+                {"$or": [{"studentClass": {"$exists": False}}, {"studentClass": None}, {"studentClass": ""}]},
+                {"$or": [{"section": {"$exists": False}}, {"section": None}, {"section": ""}]},
+            ]}
+        ]
+        # class-only match: studentClass matches AND section is empty
+        if studentClass:
+            or_clauses.append({"$and": [
+                {"studentClass": studentClass},
+                {"$or": [{"section": {"$exists": False}}, {"section": None}, {"section": ""}]},
+            ]})
+        # class + section exact match
+        if studentClass and section:
+            or_clauses.append({"studentClass": studentClass, "section": section})
+        query['$or'] = or_clauses
     return await db.events.find(query, {"_id": 0}).to_list(1000)
 
 @router.put("/events/{event_id}")

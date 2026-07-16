@@ -220,6 +220,9 @@ class Event(BaseModel):
     title: str
     description: str
     date: str
+    # Optional targeting. When both are empty/None, event is school-wide (visible to everyone).
+    studentClass: Optional[str] = None
+    section: Optional[str] = None
     sendNotification: Optional[bool] = False
     attachmentUrl: Optional[str] = None
     attachmentName: Optional[str] = None
@@ -229,6 +232,8 @@ class EventCreate(BaseModel):
     title: str
     description: str
     date: str
+    studentClass: Optional[str] = None
+    section: Optional[str] = None
     sendNotification: Optional[bool] = False
     attachmentUrl: Optional[str] = None
     attachmentName: Optional[str] = None

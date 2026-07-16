@@ -7,14 +7,16 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const EventCalendar = () => {
   const { role, perms } = useAuth();
   const showEdit = canEdit(perms, 'calendar');
   const [events, setEvents] = useState([]);
+  const [classes, setClasses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showDialog, setShowDialog] = useState(false);
-  const [form, setForm] = useState({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false, attachmentUrl: '', attachmentName: '' });
+  const [form, setForm] = useState({ title: '', description: '', date: new Date().toISOString().split('T')[0], studentClass: '', section: '', sendNotification: false, attachmentUrl: '', attachmentName: '' });
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const loadEvents = useCallback(async () => {
@@ -23,15 +25,21 @@ const EventCalendar = () => {
     finally { setLoading(false); }
   }, [selectedMonth]);
 
-  useEffect(() => { loadEvents(); }, [loadEvents]);
+  useEffect(() => {
+    loadEvents();
+    api.getClasses().then((r) => setClasses(r.data || [])).catch(() => {});
+  }, [loadEvents]);
+
+  const resetForm = () => setForm({ title: '', description: '', date: new Date().toISOString().split('T')[0], studentClass: '', section: '', sendNotification: false, attachmentUrl: '', attachmentName: '' });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
       await api.createEvent(form);
-      toast.success('Event added');
+      const scope = form.studentClass ? (form.section ? `Class ${form.studentClass}-${form.section}` : `Class ${form.studentClass}`) : 'school-wide';
+      toast.success(`Event added (${scope})`);
       setShowDialog(false);
-      setForm({ title: '', description: '', date: new Date().toISOString().split('T')[0], sendNotification: false, attachmentUrl: '', attachmentName: '' });
+      resetForm();
       loadEvents();
     } catch (error) { toast.error('Failed to add event'); }
   };
@@ -80,9 +88,34 @@ const EventCalendar = () => {
                 <div><Label>Title *</Label><Input data-testid="event-title" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} className="rounded-xl h-12" placeholder="Event title" /></div>
                 <div><Label>Date *</Label><Input type="date" required value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="rounded-xl h-12" /></div>
                 <div><Label>Description *</Label><textarea required value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full border border-slate-200 rounded-xl p-3 min-h-[100px] focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="Event details..." /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Target Class <span className="text-slate-400 font-normal">(optional)</span></Label>
+                    <Select value={form.studentClass || 'all'} onValueChange={(v) => setForm({ ...form, studentClass: v === 'all' ? '' : v, section: v === 'all' ? '' : form.section })}>
+                      <SelectTrigger data-testid="event-class" className="rounded-xl h-12 mt-1"><SelectValue placeholder="All (school-wide)" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All (school-wide)</SelectItem>
+                        {classes.map((c) => (<SelectItem key={c.id} value={c.className}>Class {c.className}</SelectItem>))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Target Section <span className="text-slate-400 font-normal">(optional)</span></Label>
+                    <Select value={form.section || 'all'} onValueChange={(v) => setForm({ ...form, section: v === 'all' ? '' : v })} disabled={!form.studentClass}>
+                      <SelectTrigger data-testid="event-section" className="rounded-xl h-12 mt-1"><SelectValue placeholder={form.studentClass ? 'All sections' : 'Pick class first'} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All sections in class</SelectItem>
+                        {form.studentClass && classes.find((c) => c.className === form.studentClass)?.sections?.map((s) => (
+                          <SelectItem key={s} value={s}>Section {s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <p className="-mt-2 text-[11px] text-slate-500">Leave both blank to broadcast to the whole school.</p>
                 <div className="flex items-center gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                   <input type="checkbox" id="sendNotif" checked={form.sendNotification} onChange={(e) => setForm({ ...form, sendNotification: e.target.checked })} className="w-5 h-5 rounded accent-amber-500" />
-                  <label htmlFor="sendNotif" className="font-bold text-amber-800 cursor-pointer">Send WhatsApp notification to all parents</label>
+                  <label htmlFor="sendNotif" className="font-bold text-amber-800 cursor-pointer text-sm">Send WhatsApp notification to targeted parents</label>
                 </div>
                 <div>
                   <Label>Attachment (Optional - PDF/Image)</Label>
@@ -94,7 +127,7 @@ const EventCalendar = () => {
                   {form.attachmentName && <p className="text-sm text-emerald-600 font-medium mt-1">Attached: {form.attachmentName}</p>}
                 </div>
                 <div className="flex justify-end gap-3 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setShowDialog(false)} className="rounded-xl">Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => { setShowDialog(false); resetForm(); }} className="rounded-xl">Cancel</Button>
                   <Button data-testid="submit-event-btn" type="submit" className="bg-sky-500 hover:bg-sky-600 text-white font-bold rounded-xl">Add Event</Button>
                 </div>
               </form>
@@ -125,11 +158,15 @@ const EventCalendar = () => {
                 {day && (
                   <>
                     <p className={`text-sm font-bold ${isToday ? 'text-sky-600' : 'text-slate-700'}`}>{day}</p>
-                    {dayEvents.map((ev) => (
-                      <div key={ev.id} className="mt-1 px-2 py-1 bg-amber-100 text-amber-800 rounded-lg text-xs font-bold truncate" title={ev.title}>
-                        {ev.title}
-                      </div>
-                    ))}
+                    {dayEvents.map((ev) => {
+                      const scope = ev.studentClass ? (ev.section ? `${ev.studentClass}-${ev.section}` : ev.studentClass) : '';
+                      const pillCls = scope ? 'bg-sky-100 text-sky-800' : 'bg-amber-100 text-amber-800';
+                      return (
+                        <div key={ev.id} className={`mt-1 px-2 py-1 rounded-lg text-xs font-bold truncate ${pillCls}`} title={`${ev.title}${scope ? ' · Class ' + scope : ' · School-wide'}`}>
+                          {scope && <span className="mr-1 px-1 py-0.5 bg-white/70 rounded text-[9px]">{scope}</span>}{ev.title}
+                        </div>
+                      );
+                    })}
                   </>
                 )}
               </div>
