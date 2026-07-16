@@ -97,9 +97,10 @@ async def create_fee_payment(payment: FeePaymentCreate):
     student = await db.students.find_one({"studentCode": payment.studentCode}, {"_id": 0})
     if student and settings_doc:
         fee_label = f"Term {payment.termNumber}" if payment.termNumber else (payment.feeName or 'Custom Fee')
-        # Build public invoice URL for WhatsApp document (view endpoint, no download header)
+        # Public invoice URL for WhatsApp document. Meta rejects URLs that don't look like PDFs,
+        # so we surface a .pdf suffix + inline Content-Disposition on the view endpoint.
         backend_url = os.environ.get('REACT_APP_BACKEND_URL', '')
-        invoice_url = f"{backend_url}/api/fees/invoice-view/{payment_obj.id}"
+        invoice_url = f"{backend_url}/api/fees/invoice-view/{payment_obj.id}/receipt_{payment_obj.receiptNumber}.pdf"
         await send_fee_paid_message(student.get('mobile', ''), invoice_url, payment.amount, fee_label, payment.studentName, settings_doc)
     return payment_obj
 
@@ -113,16 +114,42 @@ async def download_invoice(payment_id: str):
     buf = generate_invoice_pdf(payment, student, school)
     return StreamingResponse(buf, media_type="application/pdf", headers={"Content-Disposition": f"attachment; filename=invoice_{payment['receiptNumber']}.pdf"})
 
-@router.get("/fees/invoice-view/{payment_id}")
-async def view_invoice(payment_id: str):
-    """Public PDF view endpoint (no attachment header) - for WhatsApp document link"""
+
+async def _build_invoice_response(payment_id: str, filename: str):
+    """Shared helper: returns a public-friendly PDF Response (inline) with Content-Length so
+    Meta WhatsApp / drive-style previewers can render it."""
     payment = await db.fee_payments.find_one({"id": payment_id}, {"_id": 0})
-    if not payment: raise HTTPException(status_code=404, detail="Payment not found")
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
     student = await db.students.find_one({"studentCode": payment.get('studentCode', payment.get('rollNo', ''))}, {"_id": 0})
-    if not student: student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentCode": payment.get('studentCode', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
+    if not student:
+        student = {"studentName": payment.get('studentName', ''), "rollNo": payment.get('rollNo', ''), "studentCode": payment.get('studentCode', ''), "studentClass": "", "section": "", "fatherName": "", "mobile": ""}
     school = await db.settings.find_one({"type": "school"}, {"_id": 0})
     buf = generate_invoice_pdf(payment, student, school)
-    return StreamingResponse(buf, media_type="application/pdf")
+    pdf_bytes = buf.getvalue()
+    safe_name = filename if filename.lower().endswith('.pdf') else f"receipt_{payment['receiptNumber']}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{safe_name}"',
+            "Content-Length": str(len(pdf_bytes)),
+            "Cache-Control": "public, max-age=86400",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/fees/invoice-view/{payment_id}")
+async def view_invoice(payment_id: str):
+    """Public PDF view endpoint (legacy path, no .pdf suffix)."""
+    return await _build_invoice_response(payment_id, f"receipt_{payment_id}.pdf")
+
+
+@router.get("/fees/invoice-view/{payment_id}/{filename}")
+async def view_invoice_named(payment_id: str, filename: str):
+    """Public PDF view endpoint with a .pdf filename in the URL so Meta / previewers accept it."""
+    return await _build_invoice_response(payment_id, filename)
 
 @router.get("/fees/day-sheet")
 async def get_day_sheet(date: Optional[str] = None):
